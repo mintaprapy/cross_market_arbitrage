@@ -127,27 +127,27 @@ body::before {
   margin-top: 8px;
 }
 
-.toolbar {
-  margin-bottom: 12px;
-}
-
 .range-controls {
   display: inline-flex;
-  gap: 8px;
+  gap: 6px;
   padding: 6px;
-  border-radius: 14px;
+  border-radius: 12px;
   background: rgba(255, 252, 247, 0.75);
   border: 1px solid var(--line);
 }
 
+.chart-range {
+  margin-bottom: 10px;
+}
+
 .range-controls button {
   border: 1px solid var(--line);
-  background: rgba(255, 255, 255, 0.7);
+  background: rgba(255, 255, 255, 0.75);
   color: var(--ink);
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 700;
-  border-radius: 10px;
-  padding: 6px 10px;
+  border-radius: 9px;
+  padding: 5px 8px;
   cursor: pointer;
 }
 

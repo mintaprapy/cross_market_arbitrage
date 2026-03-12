@@ -4,11 +4,9 @@ const pollIntervalEl = document.getElementById('poll-interval');
 const usdCnyEl = document.getElementById('usd-cny');
 const lastRefreshEl = document.getElementById('last-refresh');
 const assetTemplate = document.getElementById('asset-template');
-const rangeControls = document.getElementById('range-controls');
 
 const REFRESH_EVERY_MS = 5000;
 const HISTORY_LIMIT = 200000;
-let selectedRangeHours = 24;
 let refreshTimer = null;
 let refreshInFlight = false;
 
@@ -111,6 +109,8 @@ function createAssetCard(asset, history) {
   const errorBox = fragment.querySelector('.error-box');
   const priceChart = fragment.querySelector('.price-chart');
   const spreadChart = fragment.querySelector('.spread-chart');
+  const priceRangeControls = fragment.querySelector('.chart-range[data-chart="price"]');
+  const spreadRangeControls = fragment.querySelector('.chart-range[data-chart="spread"]');
 
   eyebrow.textContent = asset.unit_label;
   title.textContent = asset.label;
@@ -135,34 +135,69 @@ function createAssetCard(asset, history) {
     errorBox.textContent = asset.errors.join(' | ');
   }
 
-  drawSingleAxisChart(priceChart, history.points, [
-    { key: 'domestic_price', color: '#b7791f', label: '大陆换算价' },
-    { key: 'external_comparable_price', color: '#245c46', label: '非大陆市场价' }
-  ]);
+  let priceHours = 24;
+  let spreadHours = 24;
 
-  drawDualAxisChart(
-    spreadChart,
-    history.points,
-    { key: 'spread_abs', color: '#56747f', label: 'Spread Abs' },
-    { key: 'spread_pct', color: '#7a3fb0', label: 'Spread Pct' },
-    { drawZeroLine: true, rightAxisPercent: true, rightAxisTight: true }
-  );
+  const pointsInHours = (hours) => {
+    const cutoff = Date.now() - hours * 60 * 60 * 1000;
+    return (history.points || []).filter((p) => Date.parse(p.timestamp) >= cutoff);
+  };
 
-  attachChartHover(priceChart, history.points, (point) => {
-    return [
+  const renderPriceChart = () => {
+    const points = pointsInHours(priceHours);
+    drawSingleAxisChart(priceChart, points, [
+      { key: 'domestic_price', color: '#b7791f', label: '大陆换算价' },
+      { key: 'external_comparable_price', color: '#245c46', label: '非大陆市场价' }
+    ]);
+    attachChartHover(priceChart, points, (point) => [
       `时间: ${formatTimestamp(point.timestamp)}`,
       `大陆换算价: ${formatNumber(point.domestic_price, 3)}`,
       `非大陆市场价: ${formatNumber(point.external_comparable_price, 3)}`
-    ];
-  });
+    ]);
+  };
 
-  attachChartHover(spreadChart, history.points, (point) => {
-    return [
+  const renderSpreadChart = () => {
+    const points = pointsInHours(spreadHours);
+    drawDualAxisChart(
+      spreadChart,
+      points,
+      { key: 'spread_abs', color: '#56747f', label: 'Spread Abs' },
+      { key: 'spread_pct', color: '#7a3fb0', label: 'Spread Pct' },
+      { drawZeroLine: true, rightAxisPercent: true, rightAxisTight: true }
+    );
+    attachChartHover(spreadChart, points, (point) => [
       `时间: ${formatTimestamp(point.timestamp)}`,
       `Spread Abs: ${formatNumber(point.spread_abs, 3)}`,
       `Spread Pct: ${formatPercent(point.spread_pct)}`
-    ];
+    ]);
+  };
+
+  const bindRange = (container, onChange) => {
+    if (!container) return;
+    container.addEventListener('click', (event) => {
+      const button = event.target.closest('button[data-hours]');
+      if (!button) return;
+      const hours = Number(button.dataset.hours);
+      if (!Number.isFinite(hours) || hours <= 0) return;
+      container.querySelectorAll('button[data-hours]').forEach((b) =>
+        b.classList.toggle('active', b === button)
+      );
+      onChange(hours);
+    });
+  };
+
+  bindRange(priceRangeControls, (hours) => {
+    priceHours = hours;
+    renderPriceChart();
   });
+
+  bindRange(spreadRangeControls, (hours) => {
+    spreadHours = hours;
+    renderSpreadChart();
+  });
+
+  renderPriceChart();
+  renderSpreadChart();
 
   return card;
 }
@@ -170,7 +205,7 @@ function createAssetCard(asset, history) {
 function drawXAxisTicks(ctx, points, width, height, padding, drawableWidth) {
   if (!points.length) return;
   const tickCount = 5;
-  ctx.fillStyle = '#5a6a72';
+  ctx.fillStyle = '#2f3f47';
   ctx.font = '11px "Avenir Next", sans-serif';
 
   for (let i = 0; i < tickCount; i += 1) {
@@ -178,24 +213,45 @@ function drawXAxisTicks(ctx, points, width, height, padding, drawableWidth) {
     const idx = Math.round((points.length - 1) * ratio);
     const x = padding.left + drawableWidth * ratio;
     const ts = points[idx]?.timestamp;
-    const label = ts ? new Date(ts).toLocaleTimeString() : '--';
+    const label = ts
+      ? new Date(ts).toLocaleString(undefined, { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
+      : '--';
+
+    // tick mark
+    ctx.strokeStyle = 'rgba(21, 34, 42, 0.35)';
+    ctx.beginPath();
+    ctx.moveTo(x, height - padding.bottom);
+    ctx.lineTo(x, height - padding.bottom + 5);
+    ctx.stroke();
+
     const w = ctx.measureText(label).width;
     const drawX = i === 0 ? x : i === tickCount - 1 ? x - w : x - w / 2;
     ctx.fillText(label, drawX, height - 8);
   }
 }
 
-function drawYAxisTicks(ctx, min, max, x, top, height, color, formatter) {
+function drawYAxisTicks(ctx, min, max, x, top, height, color, formatter, align = 'left', axisX = null) {
   const tickCount = 5;
   ctx.fillStyle = color;
   ctx.font = '11px "Avenir Next", sans-serif';
+  ctx.textAlign = align;
   for (let i = 0; i < tickCount; i += 1) {
     const ratio = i / (tickCount - 1);
     const value = max - (max - min) * ratio;
     const y = top + height * ratio;
     const label = formatter(value);
-    ctx.fillText(label, x - ctx.measureText(label).width / 2, y + 3);
+
+    if (Number.isFinite(axisX)) {
+      ctx.strokeStyle = 'rgba(21, 34, 42, 0.35)';
+      ctx.beginPath();
+      ctx.moveTo(axisX, y);
+      ctx.lineTo(axisX + (align === 'right' ? -5 : 5), y);
+      ctx.stroke();
+    }
+
+    ctx.fillText(label, x, y + 3);
   }
+  ctx.textAlign = 'left';
 }
 
 function drawSingleAxisChart(canvas, points, series) {
@@ -271,7 +327,24 @@ function drawSingleAxisChart(canvas, points, series) {
     ctx.stroke();
   }
 
-  drawYAxisTicks(ctx, yMin, yMax, 26, padding.top, drawableHeight, '#5a6a72', (v) => v.toFixed(2));
+  // left Y-axis line + ticks (price)
+  ctx.strokeStyle = 'rgba(21, 34, 42, 0.2)';
+  ctx.beginPath();
+  ctx.moveTo(padding.left, padding.top);
+  ctx.lineTo(padding.left, height - padding.bottom);
+  ctx.stroke();
+  drawYAxisTicks(
+    ctx,
+    yMin,
+    yMax,
+    padding.left - 6,
+    padding.top,
+    drawableHeight,
+    '#2f3f47',
+    (v) => v.toFixed(2),
+    'right',
+    padding.left
+  );
   drawXAxisTicks(ctx, points, width, height, padding, drawableWidth);
 
   // legend
@@ -403,16 +476,38 @@ function drawDualAxisChart(canvas, points, leftSeries, rightSeries, options = {}
     return value.toFixed(2);
   };
 
-  drawYAxisTicks(ctx, leftRange.min, leftRange.max, 26, padding.top, drawableHeight, leftSeries.color, (v) => v.toFixed(2));
+  // draw explicit left/right Y-axis lines + ticks
+  ctx.strokeStyle = 'rgba(21, 34, 42, 0.2)';
+  ctx.beginPath();
+  ctx.moveTo(padding.left, padding.top);
+  ctx.lineTo(padding.left, height - padding.bottom);
+  ctx.moveTo(width - padding.right, padding.top);
+  ctx.lineTo(width - padding.right, height - padding.bottom);
+  ctx.stroke();
+
+  drawYAxisTicks(
+    ctx,
+    leftRange.min,
+    leftRange.max,
+    padding.left - 6,
+    padding.top,
+    drawableHeight,
+    leftSeries.color,
+    (v) => v.toFixed(2),
+    'right',
+    padding.left
+  );
   drawYAxisTicks(
     ctx,
     rightRange.min,
     rightRange.max,
-    width - 26,
+    width - padding.right + 6,
     padding.top,
     drawableHeight,
     rightSeries.color,
-    formatRightAxis
+    formatRightAxis,
+    'left',
+    width - padding.right
   );
   drawXAxisTicks(ctx, points, width, height, padding, drawableWidth);
 }
@@ -479,9 +574,7 @@ async function refreshDashboard() {
 
     const histories = await Promise.all(
       snapshot.assets.map((asset) =>
-        fetchJson(
-          `/api/history?asset=${encodeURIComponent(asset.asset)}&limit=${HISTORY_LIMIT}&hours=${selectedRangeHours}`
-        )
+        fetchJson(`/api/history?asset=${encodeURIComponent(asset.asset)}&limit=${HISTORY_LIMIT}`)
       )
     );
 
@@ -495,30 +588,10 @@ async function refreshDashboard() {
   }
 }
 
-function setActiveRangeButton() {
-  if (!rangeControls) return;
-  rangeControls.querySelectorAll('button[data-hours]').forEach((btn) => {
-    btn.classList.toggle('active', Number(btn.dataset.hours) === selectedRangeHours);
-  });
-}
-
-if (rangeControls) {
-  rangeControls.addEventListener('click', (event) => {
-    const button = event.target.closest('button[data-hours]');
-    if (!button) return;
-    const hours = Number(button.dataset.hours);
-    if (!Number.isFinite(hours) || hours <= 0) return;
-    selectedRangeHours = hours;
-    setActiveRangeButton();
-    refreshDashboard().catch((error) => console.error(error));
-  });
-}
-
 window.addEventListener('resize', () => {
   scheduleRefresh(150);
 });
 
-setActiveRangeButton();
 refreshDashboard().catch((error) => {
   console.error(error);
   scheduleRefresh();

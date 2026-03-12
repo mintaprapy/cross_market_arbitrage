@@ -2,13 +2,14 @@ import {
   APP_NAME,
   ASSETS,
   HISTORY_LIMIT,
+  HISTORY_SAMPLE_INTERVAL_MS,
   POLL_INTERVAL_MS,
   ROLLING_WINDOW_SIZE
 } from './config.js';
 import { fetchQuote, fetchUsdCny } from './dataSources.js';
 import {
   computeSpread,
-  convertExternalToComparableUnit,
+  convertDomesticToExternalComparableUnit,
   isFiniteNumber,
   percentile,
   takeLastNumeric,
@@ -33,6 +34,7 @@ function createEmptySample(asset) {
     status: 'waiting',
     usd_cny: null,
     domestic_price: null,
+    domestic_raw_price: null,
     external_price: null,
     external_comparable_price: null,
     spread_abs: null,
@@ -90,6 +92,8 @@ export class SpreadMonitor {
     this.assets = options.assets ?? ASSETS;
     this.historyLimit = options.historyLimit ?? HISTORY_LIMIT;
     this.pollIntervalMs = options.pollIntervalMs ?? POLL_INTERVAL_MS;
+    this.historySampleIntervalMs =
+      options.historySampleIntervalMs ?? HISTORY_SAMPLE_INTERVAL_MS;
     this.rollingWindowSize = options.rollingWindowSize ?? ROLLING_WINDOW_SIZE;
     this.startedAt = new Date().toISOString();
     this.lastPollAt = null;
@@ -104,6 +108,7 @@ export class SpreadMonitor {
           asset,
           latest: createEmptySample(asset),
           history: [],
+          lastHistoryRecordedAt: null,
           pollCount: 0,
           successCount: 0,
           lastError: null
@@ -155,14 +160,15 @@ export class SpreadMonitor {
 
     const domestic = quoteFromResult(asset.domestic, domesticResult);
     const external = quoteFromResult(asset.external, externalResult);
-    const domesticPrice = isFiniteNumber(domestic.price) ? domestic.price : null;
-    const externalComparablePrice = convertExternalToComparableUnit(
+    const domesticRawPrice = isFiniteNumber(domestic.price) ? domestic.price : null;
+    const domesticComparablePrice = convertDomesticToExternalComparableUnit(
       asset.key,
-      external.price,
-      asset.external.unit,
+      domesticRawPrice,
+      asset.domestic.unit,
       usdCny
     );
-    const spread = computeSpread(domesticPrice, externalComparablePrice);
+    const externalComparablePrice = isFiniteNumber(external.price) ? external.price : null;
+    const spread = computeSpread(domesticComparablePrice, externalComparablePrice);
     const historicalSpreads = takeLastNumeric(
       entry.history.map((sample) => sample.spread_abs),
       Math.max(this.rollingWindowSize - 1, 0)
@@ -179,8 +185,9 @@ export class SpreadMonitor {
       timestamp,
       status: sampleStatus(domestic, external, spread),
       usd_cny: usdCny,
-      domestic_price: domesticPrice,
-      external_price: isFiniteNumber(external.price) ? external.price : null,
+      domestic_price: domesticComparablePrice,
+      domestic_raw_price: domesticRawPrice,
+      external_price: externalComparablePrice,
       external_comparable_price: externalComparablePrice,
       spread_abs: spread.absolute,
       spread_pct: spread.percent,
@@ -195,8 +202,19 @@ export class SpreadMonitor {
     if (sample.status === 'ok') entry.successCount += 1;
     entry.lastError = errors[0] ?? null;
     entry.latest = sample;
-    entry.history.push(sample);
-    trimHistory(entry.history, this.historyLimit);
+
+    const nowMs = Date.parse(timestamp);
+    const lastMs = entry.lastHistoryRecordedAt ? Date.parse(entry.lastHistoryRecordedAt) : null;
+    const shouldRecordHistory =
+      !entry.lastHistoryRecordedAt ||
+      !Number.isFinite(lastMs) ||
+      nowMs - lastMs >= this.historySampleIntervalMs;
+
+    if (shouldRecordHistory) {
+      entry.history.push(sample);
+      entry.lastHistoryRecordedAt = timestamp;
+      trimHistory(entry.history, this.historyLimit);
+    }
   }
 
   getHealth() {
@@ -208,6 +226,7 @@ export class SpreadMonitor {
       started_at: this.startedAt,
       uptime_sec: Math.round(uptimeMs / 1000),
       poll_interval_ms: this.pollIntervalMs,
+      history_sample_interval_ms: this.historySampleIntervalMs,
       rolling_window_size: this.rollingWindowSize,
       history_limit: this.historyLimit,
       is_polling: this.isPolling,
@@ -233,6 +252,7 @@ export class SpreadMonitor {
     return {
       as_of: this.lastPollFinishedAt ?? this.lastPollAt ?? new Date().toISOString(),
       poll_interval_ms: this.pollIntervalMs,
+      history_sample_interval_ms: this.historySampleIntervalMs,
       rolling_window_size: this.rollingWindowSize,
       history_limit: this.historyLimit,
       usd_cny: this.latestUsdCny,
@@ -240,11 +260,21 @@ export class SpreadMonitor {
     };
   }
 
-  getHistory(assetKey, limit = 300) {
+  getHistory(assetKey, options = {}) {
     const entry = this.state.get(assetKey);
     if (!entry) return null;
 
+    const limit = options.limit ?? 300;
+    const hours = options.hours ?? null;
     const safeLimit = Math.max(1, Math.min(Number(limit) || 300, this.historyLimit));
+
+    let points = entry.history;
+    if (hours != null && Number.isFinite(Number(hours)) && Number(hours) > 0) {
+      const windowMs = Number(hours) * 60 * 60 * 1000;
+      const cutoff = Date.now() - windowMs;
+      points = points.filter((sample) => Date.parse(sample.timestamp) >= cutoff);
+    }
+
     return {
       asset: {
         key: entry.asset.key,
@@ -254,7 +284,7 @@ export class SpreadMonitor {
         external: entry.asset.external
       },
       limit: safeLimit,
-      points: entry.history.slice(-safeLimit).map((sample) => cloneSample(sample))
+      points: points.slice(-safeLimit).map((sample) => cloneSample(sample))
     };
   }
 }

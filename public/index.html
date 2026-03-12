@@ -34,6 +34,15 @@
       </header>
 
       <main>
+        <section class="toolbar">
+          <div class="range-controls" id="range-controls">
+            <button data-hours="24" class="active">24H</button>
+            <button data-hours="168">7D</button>
+            <button data-hours="360">15D</button>
+            <button data-hours="720">30D</button>
+            <button data-hours="2160">90D</button>
+          </div>
+        </section>
         <section class="status-strip" id="status-strip">
           <span class="status-pill muted">Waiting for first snapshot</span>
         </section>
@@ -71,17 +80,17 @@
         <div class="chart-stack">
           <section class="chart-panel">
             <div class="chart-header">
-              <h3>Normalized prices</h3>
-              <small>Domestic vs external comparable</small>
+              <h3>价格（双轴）</h3>
+              <small>左轴: 大陆换算价 ｜ 右轴: 非大陆市场价</small>
             </div>
             <canvas class="price-chart" width="640" height="220"></canvas>
           </section>
           <section class="chart-panel">
             <div class="chart-header">
-              <h3>Spread</h3>
-              <small>Absolute spread in domestic units</small>
+              <h3>Spread（双轴）</h3>
+              <small>左轴: Spread Abs ｜ 右轴: Spread Pct</small>
             </div>
-            <canvas class="spread-chart" width="640" height="180"></canvas>
+            <canvas class="spread-chart" width="640" height="220"></canvas>
           </section>
         </div>
       </article>

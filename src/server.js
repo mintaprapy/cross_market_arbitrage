@@ -29,7 +29,10 @@ app.get('/api/history', (req, res) => {
     return;
   }
 
-  const history = monitor.getHistory(assetKey, req.query.limit ?? FRONTEND_HISTORY_LIMIT);
+  const history = monitor.getHistory(assetKey, {
+    limit: req.query.limit ?? FRONTEND_HISTORY_LIMIT,
+    hours: req.query.hours
+  });
   if (!history) {
     res.status(404).json({ ok: false, error: `Unknown asset: ${assetKey}` });
     return;

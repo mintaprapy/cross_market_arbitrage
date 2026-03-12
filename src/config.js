@@ -14,7 +14,7 @@ export const POLL_INTERVAL_MS = clamp(
   5000,
   15000
 );
-export const HISTORY_LIMIT = Math.max(100, numberFromEnv(process.env.HISTORY_LIMIT, 1500));
+export const HISTORY_LIMIT = Math.max(1000, numberFromEnv(process.env.HISTORY_LIMIT, 200000));
 export const ROLLING_WINDOW_SIZE = clamp(
   numberFromEnv(process.env.ROLLING_WINDOW_SIZE, 120),
   20,
@@ -26,9 +26,13 @@ export const FETCH_TIMEOUT_MS = clamp(
   15000
 );
 export const FRONTEND_HISTORY_LIMIT = clamp(
-  numberFromEnv(process.env.FRONTEND_HISTORY_LIMIT, 180),
-  60,
+  numberFromEnv(process.env.FRONTEND_HISTORY_LIMIT, 5000),
+  120,
   HISTORY_LIMIT
+);
+export const HISTORY_SAMPLE_INTERVAL_MS = Math.max(
+  10000,
+  numberFromEnv(process.env.HISTORY_SAMPLE_INTERVAL_MS, 60000)
 );
 
 // Important: domestic symbols may need adjustment based on your data source.
@@ -37,51 +41,51 @@ export const ASSETS = [
   {
     key: 'gold',
     label: '黄金',
-    unitLabel: 'CNY / g (normalized)',
+    unitLabel: 'USD / oz (comparable)',
     domestic: {
       source: 'sina-futures',
-      symbol: 'au0',
+      symbol: 'nf_AU0',
       label: '沪金主力',
       unit: 'CNY_PER_GRAM'
     },
     external: {
-      source: 'binance',
-      symbol: 'PAXGUSDT',
-      label: 'Binance PAXG/USDT proxy',
+      source: 'binance-futures',
+      symbol: 'XAUUSDT',
+      label: 'Binance Futures XAUUSDT',
       unit: 'USD_PER_TROY_OUNCE'
     }
   },
   {
     key: 'silver',
     label: '白银',
-    unitLabel: 'CNY / kg (normalized)',
+    unitLabel: 'USD / oz (comparable)',
     domestic: {
       source: 'sina-futures',
-      symbol: 'ag0',
+      symbol: 'nf_AG0',
       label: '沪银主力',
       unit: 'CNY_PER_KG'
     },
     external: {
-      source: 'binance',
+      source: 'binance-futures',
       symbol: 'XAGUSDT',
-      label: 'Binance XAG/USDT proxy',
+      label: 'Binance Futures XAGUSDT',
       unit: 'USD_PER_TROY_OUNCE'
     }
   },
   {
     key: 'oil',
     label: '原油',
-    unitLabel: 'CNY / barrel (normalized)',
+    unitLabel: 'USD / barrel (comparable)',
     domestic: {
       source: 'sina-futures',
-      symbol: 'sc0',
+      symbol: 'nf_SC0',
       label: '原油主力',
       unit: 'CNY_PER_BARREL'
     },
     external: {
-      source: 'binance',
-      symbol: 'WTIUSDT',
-      label: 'Binance WTI/USDT proxy',
+      source: 'hyperliquid',
+      symbol: 'xyz:CL',
+      label: 'Hyperliquid CL',
       unit: 'USD_PER_BARREL'
     }
   }

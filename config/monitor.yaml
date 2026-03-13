@@ -1,0 +1,119 @@
+app:
+  name: Cross Market Commodity Monitor
+  timezone: Asia/Hong_Kong
+  poll_interval_sec: 10
+  history_limit: 1000
+  rolling_window_size: 120
+  http_timeout_sec: 8
+  sqlite_path: data/monitor.db
+  fx_source: frankfurter
+  bind_host: 127.0.0.1
+  bind_port: 8000
+  export_dir: exports
+
+sources:
+  sina_domestic:
+    kind: sina_futures
+    base_url: https://hq.sinajs.cn
+    headers:
+      Referer: https://finance.sina.com.cn
+      User-Agent: Mozilla/5.0
+  okx_swap:
+    kind: okx_swap
+    base_url: https://www.okx.com
+  frankfurter:
+    kind: frankfurter_fx
+    base_url: https://api.frankfurter.app
+    fallback_rate: 6.9
+
+pairs:
+  - group_name: AU_XAU
+    domestic_source: sina_domestic
+    domestic_symbol: nf_AU0
+    domestic_label: SHFE AU Continuous
+    overseas_source: okx_swap
+    overseas_symbol: XAU-USDT-SWAP
+    overseas_label: OKX XAU Swap
+    formula: gold
+    target_unit: USD_PER_OUNCE
+    domestic_unit: CNY_PER_GRAM
+    tax_mode: gross
+    thresholds:
+      spread_pct_abs: 0.02
+      zscore_abs: 2.5
+      stale_seconds: 180
+      max_skew_seconds: 180
+      alert_cooldown_seconds: 300
+
+  - group_name: AG_XAG_GROSS
+    domestic_source: sina_domestic
+    domestic_symbol: nf_AG0
+    domestic_label: SHFE AG Continuous
+    overseas_source: okx_swap
+    overseas_symbol: XAG-USDT-SWAP
+    overseas_label: OKX XAG Swap
+    formula: silver
+    target_unit: USD_PER_OUNCE
+    domestic_unit: CNY_PER_KG
+    tax_mode: gross
+
+  - group_name: AG_XAG_NET
+    domestic_source: sina_domestic
+    domestic_symbol: nf_AG0
+    domestic_label: SHFE AG Continuous
+    overseas_source: okx_swap
+    overseas_symbol: XAG-USDT-SWAP
+    overseas_label: OKX XAG Swap
+    formula: silver
+    target_unit: USD_PER_OUNCE
+    domestic_unit: CNY_PER_KG
+    tax_mode: net
+
+  - group_name: CU_XCU_GROSS
+    domestic_source: sina_domestic
+    domestic_symbol: nf_CU0
+    domestic_label: SHFE CU Continuous
+    overseas_source: okx_swap
+    overseas_symbol: XCU-USDT-SWAP
+    overseas_label: OKX XCU Swap
+    formula: copper
+    target_unit: USD_PER_POUND
+    domestic_unit: CNY_PER_TON
+    tax_mode: gross
+
+  - group_name: CU_XCU_NET
+    domestic_source: sina_domestic
+    domestic_symbol: nf_CU0
+    domestic_label: SHFE CU Continuous
+    overseas_source: okx_swap
+    overseas_symbol: XCU-USDT-SWAP
+    overseas_label: OKX XCU Swap
+    formula: copper
+    target_unit: USD_PER_POUND
+    domestic_unit: CNY_PER_TON
+    tax_mode: net
+
+  - group_name: SC_CL
+    domestic_source: sina_domestic
+    domestic_symbol: nf_SC0
+    domestic_label: INE SC Continuous
+    overseas_source: okx_swap
+    overseas_symbol: CL-USDT-SWAP
+    overseas_label: OKX CL Swap
+    formula: crude_oil
+    target_unit: USD_PER_BARREL
+    domestic_unit: CNY_PER_BARREL
+    tax_mode: gross
+
+notifiers:
+  - name: console_alerts
+    kind: console
+    enabled: true
+    min_severity: warning
+
+  - name: webhook_alerts
+    kind: webhook
+    enabled: false
+    min_severity: critical
+    url: http://127.0.0.1:9000/alerts
+    timeout_sec: 5

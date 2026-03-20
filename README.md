@@ -266,6 +266,30 @@ sources:
 
 不填写认证时，系统会自动跳过需要 `TqSdk` 的链路，不影响主监控。
 
+如果要在服务器上单独测试 `TqSdk` 夜盘实时连通性，可以直接运行：
+
+```bash
+python3 -m cross_market_monitor.tools.tqsdk_connectivity_check \
+  --config config/monitor.yaml \
+  --duration-sec 300 \
+  --interval-sec 5
+```
+
+这个脚本会：
+
+- 自动读取 `config/monitor.secrets.local.yaml` 里的 `TqSdk` 认证信息
+- 对 `AU / AG / CU / BC / SC` 主连做连接与实时取数测试
+- 输出 JSON 报告到 `data/tqsdk_connectivity/`
+
+常用参数：
+
+- `--products au ag sc`
+  - 只测指定品种
+- `--connect-attempts 5`
+  - 增加重连次数
+- `--connect-timeout-sec 30`
+  - 放宽单次连接超时
+
 ## 告警阈值与通知
 
 每个交易对都可以单独配置这两个可选阈值：

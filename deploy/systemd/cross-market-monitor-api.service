@@ -10,7 +10,7 @@ Group=ubuntu
 WorkingDirectory=/srv/cross_market_arbitrage
 Environment=PYTHONUNBUFFERED=1
 ExecStartPre=/usr/bin/mkdir -p /srv/cross_market_arbitrage/data /srv/cross_market_arbitrage/exports
-ExecStart=/srv/cross_market_arbitrage/.venv/bin/cross-market-monitor --config /srv/cross_market_arbitrage/config/monitor.yaml run-api --host 127.0.0.1 --port 6080
+ExecStart=/srv/cross_market_arbitrage/.venv/bin/cross-market-monitor --config /srv/cross_market_arbitrage/config/monitor.yaml run-api --host 0.0.0.0 --port 6080
 Restart=always
 RestartSec=5
 TimeoutStopSec=20

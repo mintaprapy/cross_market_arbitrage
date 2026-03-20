@@ -109,9 +109,11 @@ sudo journalctl -u cross-market-monitor -n 100 --no-pager
 8. 验证页面和接口
 
 ```bash
-curl -fsS http://127.0.0.1:6080/api/health | python3 -m json.tool
-curl -fsS http://127.0.0.1:6080/api/snapshot | python3 -m json.tool | head
+curl -fsS http://localhost:6080/api/health | python3 -m json.tool
+curl -fsS http://localhost:6080/api/snapshot | python3 -m json.tool | head
 ```
+
+这里用 `localhost` 是服务器本机自检口径；服务默认监听的是 `0.0.0.0:6080`。
 
 如果服务器装了 `nginx`，`install-ubuntu.sh` 会一并渲染并加载站点配置；如需正式域名，部署前把 `SERVER_NAME` 环境变量传给脚本，或修改 [cross-market-monitor.conf](/Users/m2/Desktop/Codex2026/cross_market_arbitrage/deploy/nginx/cross-market-monitor.conf)。
 
@@ -321,10 +323,10 @@ notifiers:
 
 默认地址：
 
-- [http://127.0.0.1:6080](http://127.0.0.1:6080)
-- [http://127.0.0.1:6080/api/snapshot](http://127.0.0.1:6080/api/snapshot)
-- [http://127.0.0.1:6080/api/health](http://127.0.0.1:6080/api/health)
-- [http://127.0.0.1:6080/api/overseas-routes?group_name=AU_XAU](http://127.0.0.1:6080/api/overseas-routes?group_name=AU_XAU)
+- `http://<server-ip>:6080/`
+- `http://<server-ip>:6080/api/snapshot`
+- `http://<server-ip>:6080/api/health`
+- `http://<server-ip>:6080/api/overseas-routes?group_name=AU_XAU`
 
 ## Ubuntu systemd
 
@@ -341,7 +343,7 @@ notifiers:
 - 项目目录：`/srv/cross_market_arbitrage`
 - 虚拟环境：`/srv/cross_market_arbitrage/.venv`
 - 真实配置：`/srv/cross_market_arbitrage/config/monitor.yaml`
-- 监听：`127.0.0.1:6080`
+- 监听：`0.0.0.0:6080`
 
 推荐安装流程：
 
@@ -419,9 +421,9 @@ sudo systemctl status cross-market-monitor --no-pager
 
 5. 本机健康检查
 ```bash
-curl -sf http://127.0.0.1:6080/api/health
-curl -sf http://127.0.0.1:6080/api/snapshot
-curl -sf "http://127.0.0.1:6080/api/card?group_name=AU_XAU&range_key=24h"
+curl -sf http://localhost:6080/api/health
+curl -sf http://localhost:6080/api/snapshot
+curl -sf "http://localhost:6080/api/card?group_name=AU_XAU&range_key=24h"
 ```
 
 6. Nginx
@@ -441,9 +443,9 @@ sudo journalctl -u cross-market-monitor -n 100 --no-pager
 - 如已启用飞书 / Telegram，建议先手动把某个交易对阈值设得接近当前价差，验证一次通知链路
 
 8. 防火墙与暴露面
-- `cross-market-monitor` 只监听 `127.0.0.1:6080`
-- 对外只开放 `80/443`
-- 不建议直接暴露 `6080`
+- `cross-market-monitor` 默认监听 `0.0.0.0:6080`
+- 如果前面放 `Nginx`，建议公网只开放 `80/443`
+- `6080` 至少要通过防火墙或安全组限制来源
 
 9. 上线后首日观察
 - 观察开盘前后：
@@ -454,18 +456,18 @@ sudo journalctl -u cross-market-monitor -n 100 --no-pager
 - 常用命令：
 ```bash
 sudo journalctl -u cross-market-monitor -f
-curl -sf http://127.0.0.1:6080/api/health
+curl -sf http://localhost:6080/api/health
 ```
 
 ## Nginx 反向代理
 
-如果 `systemd` 服务保持监听本机：
+如果 `systemd` 服务默认监听：
 
 ```text
-127.0.0.1:6080
+0.0.0.0:6080
 ```
 
-可以在 Nginx 里这样代理：
+Nginx 在同机回源时可以这样代理：
 
 ```nginx
 server {
@@ -473,7 +475,7 @@ server {
     server_name your.domain.com;
 
     location / {
-        proxy_pass http://127.0.0.1:6080;
+        proxy_pass http://localhost:6080;
         proxy_http_version 1.1;
 
         proxy_set_header Host $host;
@@ -500,7 +502,7 @@ sudo systemctl reload nginx
 如果你已经有 HTTPS 证书，只需要在现有 `443` server block 里把 `location /` 指向：
 
 ```text
-http://127.0.0.1:6080
+http://localhost:6080
 ```
 
 即可。
@@ -540,7 +542,7 @@ http://127.0.0.1:6080
 
 ```ini
 WorkingDirectory=/srv/cross_market_arbitrage
-ExecStart=/srv/cross_market_arbitrage/.venv/bin/cross-market-monitor --config /srv/cross_market_arbitrage/config/monitor.yaml serve --host 127.0.0.1 --port 6080
+ExecStart=/srv/cross_market_arbitrage/.venv/bin/cross-market-monitor --config /srv/cross_market_arbitrage/config/monitor.yaml serve --host 0.0.0.0 --port 6080
 ```
 
 ## 导出与回放

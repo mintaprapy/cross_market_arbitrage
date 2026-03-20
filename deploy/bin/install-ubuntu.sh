@@ -103,7 +103,8 @@ PY
 
 API_HOST="${API_HOST:-${config_values[0]}}"
 API_PORT="${API_PORT:-${config_values[1]}}"
-API_BIND="${API_BIND:-${API_HOST}:${API_PORT}}"
+NGINX_UPSTREAM_HOST="${NGINX_UPSTREAM_HOST:-localhost}"
+API_BIND="${API_BIND:-${NGINX_UPSTREAM_HOST}:${API_PORT}}"
 WRITE_PATHS="${config_values[2]} ${config_values[3]}"
 
 render_unit() {
@@ -115,7 +116,7 @@ render_unit() {
     -e "s|User=ubuntu|User=${APP_USER}|g" \
     -e "s|Group=ubuntu|Group=${APP_GROUP}|g" \
     -e "s|ReadWritePaths=/srv/cross_market_arbitrage/data /srv/cross_market_arbitrage/exports|ReadWritePaths=${WRITE_PATHS}|g" \
-    -e "s|serve --host 127.0.0.1 --port 6080|serve --host ${API_HOST} --port ${API_PORT}|g" \
+    -e "s|serve --host 0.0.0.0 --port 6080|serve --host ${API_HOST} --port ${API_PORT}|g" \
     "${source_file}" > "${target_file}"
 }
 
@@ -135,7 +136,7 @@ if [[ "${INSTALL_NGINX}" == "1" ]] && command -v nginx >/dev/null 2>&1; then
   install -d "${NGINX_AVAILABLE_DIR}" "${NGINX_ENABLED_DIR}"
   sed \
     -e "s|server_name _;|server_name ${SERVER_NAME};|g" \
-    -e "s|127.0.0.1:6080|${API_BIND}|g" \
+    -e "s|localhost:6080|${API_BIND}|g" \
     "${REPO_DIR}/deploy/nginx/cross-market-monitor.conf" > "${NGINX_AVAILABLE_DIR}/${NGINX_SITE_NAME}"
   ln -sf "${NGINX_AVAILABLE_DIR}/${NGINX_SITE_NAME}" "${NGINX_ENABLED_DIR}/${NGINX_SITE_NAME}"
   nginx -t

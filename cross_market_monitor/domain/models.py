@@ -103,7 +103,7 @@ class AppConfig(BaseModel):
     sqlite_path: str = "data/monitor.db"
     fx_source: str = "frankfurter"
     fx_backup_sources: list[str] = Field(default_factory=list)
-    bind_host: str = "127.0.0.1"
+    bind_host: str = "0.0.0.0"
     bind_port: int = 6080
     export_dir: str = "exports"
     fx_window_size: int = 60

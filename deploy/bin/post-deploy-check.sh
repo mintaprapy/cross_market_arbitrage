@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-HOST="${HOST:-127.0.0.1}"
+HOST="${HOST:-localhost}"
 PORT="${PORT:-6080}"
 SERVICE_NAME="${SERVICE_NAME:-cross-market-monitor}"
 

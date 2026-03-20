@@ -12,7 +12,7 @@
 - 项目目录：`/srv/cross_market_arbitrage`
 - 虚拟环境：`/srv/cross_market_arbitrage/.venv`
 - 真实配置文件：`/srv/cross_market_arbitrage/config/monitor.yaml`
-- 监听地址：`127.0.0.1:6080`
+- 监听地址：`0.0.0.0:6080`
 
 ## 1. 同步代码
 
@@ -121,13 +121,13 @@ sudo ./deploy/bin/post-deploy-check.sh
 
 ## 7. 暴露方式
 
-当前 service 默认只监听本机：
+当前 service 默认监听：
 
 ```text
-127.0.0.1:6080
+0.0.0.0:6080
 ```
 
-适合放在 Nginx/Caddy 后面。
+如果前面放 Nginx/Caddy，建议公网只开放 `80/443`，并通过防火墙或安全组限制 `6080` 的来源。
 
 仓库里已经提供了可直接使用的 Nginx 模板：
 
@@ -135,14 +135,8 @@ sudo ./deploy/bin/post-deploy-check.sh
 deploy/nginx/cross-market-monitor.conf
 ```
 
-如果你要直接对外监听，可以把 `ExecStart` 里的：
+Nginx 同机回源可以继续指向本机：
 
 ```text
---host 127.0.0.1
-```
-
-改成：
-
-```text
---host 0.0.0.0
+http://localhost:6080
 ```

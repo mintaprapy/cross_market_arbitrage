@@ -10,7 +10,7 @@ app:
   sqlite_path: data/monitor.db
   fx_source: sina_fx
   fx_backup_sources: [frankfurter]
-  bind_host: 127.0.0.1
+  bind_host: 0.0.0.0
   bind_port: 6080
   export_dir: exports
   fx_window_size: 60

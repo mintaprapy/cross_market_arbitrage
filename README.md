@@ -25,20 +25,20 @@ python3 scripts/export_runtime_diagnostics.py --hours 12
 
 ## 正式上线执行命令
 
-以下命令按 Ubuntu 服务器首次上线顺序执行，默认项目目录为 `/srv/cross_market_arbitrage`：
+以下命令按 Ubuntu 服务器首次上线顺序执行，默认项目目录为 `/srv/cross_market_arbitrage`。要求 `Python 3.10+`，推荐 `Ubuntu 22.04+`：
 
 1. 安装系统依赖
 
 ```bash
 sudo apt-get update
-sudo apt-get install -y python3 python3-venv python3-pip nginx
+sudo apt-get install -y git curl python3 python3-venv python3-pip nginx
 ```
 
 2. 准备代码和本地配置
 
 ```bash
 cd /srv
-git clone <你的仓库地址> cross_market_arbitrage
+git clone https://github.com/mintaprapy/cross_market_arbitrage.git
 cd /srv/cross_market_arbitrage
 cp config/monitor.example.yaml config/monitor.yaml
 sudo cp deploy/systemd/cross-market-monitor.env.example /etc/default/cross-market-monitor
@@ -52,7 +52,25 @@ sudo editor /etc/default/cross-market-monitor
 - `TQSDK_PASSWORD`
 - `TQSDK_MD_URL`（如需要）
 
-3. 检查本地配置
+3. 创建虚拟环境并安装依赖
+
+```bash
+cd /srv/cross_market_arbitrage
+python3 -m venv .venv
+. .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -e ".[tqsdk,parquet]"
+```
+
+如果不需要 `Parquet` 导出，可以改成：
+
+```bash
+python -m pip install -e ".[tqsdk]"
+```
+
+`install-ubuntu.sh` 会复用这套虚拟环境；如果 `.venv` 不存在，它也会自动创建。
+
+4. 检查本地配置
 
 ```bash
 editor config/monitor.yaml
@@ -65,19 +83,25 @@ editor config/monitor.yaml
 - `app.domestic_trading_calendar_path`
 - `notifiers`
 
-4. 执行安装脚本
+5. 执行安装脚本
 
 ```bash
 sudo ./deploy/bin/install-ubuntu.sh
 ```
 
-5. 执行上线后自检
+默认会使用当前执行 `sudo` 的用户作为 `APP_USER` / `APP_GROUP`。如果你要改成其他账号，可以这样执行：
+
+```bash
+sudo APP_USER=ubuntu APP_GROUP=ubuntu ./deploy/bin/install-ubuntu.sh
+```
+
+6. 执行上线后自检
 
 ```bash
 sudo ./deploy/bin/post-deploy-check.sh
 ```
 
-6. 查看服务状态和日志
+7. 查看服务状态和日志
 
 ```bash
 sudo systemctl status cross-market-monitor-worker --no-pager
@@ -86,7 +110,7 @@ sudo journalctl -u cross-market-monitor-worker -n 100 --no-pager
 sudo journalctl -u cross-market-monitor-api -n 100 --no-pager
 ```
 
-7. 验证页面和接口
+8. 验证页面和接口
 
 ```bash
 curl -fsS http://127.0.0.1:6080/api/health | python3 -m json.tool
@@ -108,7 +132,7 @@ curl -fsS http://127.0.0.1:6080/api/snapshot | python3 -m json.tool | head
 - 国内影子/历史：TqSdk 主连
 - 海外：Binance Futures、OKX Swap
 - 备用源：Hyperliquid、CME NYMEX 参考源
-- 汇率：Frankfurter `USD/CNY`
+- 汇率：Sina FX `fx_susdcny`，Frankfurter 备用
 
 ## 已实现能力
 

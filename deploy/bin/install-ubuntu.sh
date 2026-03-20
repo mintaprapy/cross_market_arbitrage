@@ -10,8 +10,8 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd -- "${SCRIPT_DIR}/../.." && pwd)"
 
 APP_DIR="${APP_DIR:-${REPO_DIR}}"
-APP_USER="${APP_USER:-ubuntu}"
-APP_GROUP="${APP_GROUP:-ubuntu}"
+APP_USER="${APP_USER:-${SUDO_USER:-ubuntu}}"
+APP_GROUP="${APP_GROUP:-}"
 VENV_DIR="${VENV_DIR:-${APP_DIR}/.venv}"
 CONFIG_PATH="${CONFIG_PATH:-${APP_DIR}/config/monitor.yaml}"
 ENV_FILE="${ENV_FILE:-/etc/default/cross-market-monitor}"
@@ -25,10 +25,15 @@ API_PORT="${API_PORT:-}"
 API_BIND="${API_BIND:-}"
 PIP_EXTRAS="${PIP_EXTRAS:-tqsdk,parquet}"
 INSTALL_NGINX="${INSTALL_NGINX:-1}"
+PYTHON_BIN="${PYTHON_BIN:-}"
 
 if ! id -u "${APP_USER}" >/dev/null 2>&1; then
   echo "User ${APP_USER} does not exist" >&2
   exit 1
+fi
+
+if [[ -z "${APP_GROUP}" ]]; then
+  APP_GROUP="$(id -gn "${APP_USER}")"
 fi
 
 if [[ ! -f "${CONFIG_PATH}" ]]; then
@@ -36,10 +41,38 @@ if [[ ! -f "${CONFIG_PATH}" ]]; then
   exit 1
 fi
 
+choose_python_bin() {
+  local candidate=""
+  local candidates=()
+  if [[ -n "${PYTHON_BIN}" ]]; then
+    candidates+=("${PYTHON_BIN}")
+  fi
+  candidates+=("python3" "python3.12" "python3.11" "python3.10")
+  for candidate in "${candidates[@]}"; do
+    if ! command -v "${candidate}" >/dev/null 2>&1; then
+      continue
+    fi
+    if "${candidate}" - <<'PY' >/dev/null 2>&1
+import sys
+raise SystemExit(0 if sys.version_info >= (3, 10) else 1)
+PY
+    then
+      printf '%s\n' "${candidate}"
+      return 0
+    fi
+  done
+  return 1
+}
+
+if ! PYTHON_BIN="$(choose_python_bin)"; then
+  echo "Python 3.10+ is required. Install python3.10+ and retry." >&2
+  exit 1
+fi
+
 install -d -o "${APP_USER}" -g "${APP_GROUP}" "${APP_DIR}" "${APP_DIR}/data" "${APP_DIR}/exports"
 
 if [[ ! -x "${VENV_DIR}/bin/python" ]]; then
-  python3 -m venv "${VENV_DIR}"
+  "${PYTHON_BIN}" -m venv "${VENV_DIR}"
   chown -R "${APP_USER}:${APP_GROUP}" "${VENV_DIR}"
 fi
 

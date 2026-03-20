@@ -3,7 +3,7 @@ name = "cross-market-monitor"
 version = "0.1.0"
 description = "Cross-market commodity spread monitor for domestic futures vs overseas proxies"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.10"
 dependencies = [
   "fastapi>=0.110.0",
   "pydantic>=2.0.0",

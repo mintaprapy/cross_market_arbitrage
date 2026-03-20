@@ -103,7 +103,7 @@ PY
 
 API_HOST="${API_HOST:-${config_values[0]}}"
 API_PORT="${API_PORT:-${config_values[1]}}"
-NGINX_UPSTREAM_HOST="${NGINX_UPSTREAM_HOST:-localhost}"
+NGINX_UPSTREAM_HOST="${NGINX_UPSTREAM_HOST:-127.0.0.1}"
 API_BIND="${API_BIND:-${NGINX_UPSTREAM_HOST}:${API_PORT}}"
 WRITE_PATHS="${config_values[2]} ${config_values[3]}"
 
@@ -136,7 +136,7 @@ if [[ "${INSTALL_NGINX}" == "1" ]] && command -v nginx >/dev/null 2>&1; then
   install -d "${NGINX_AVAILABLE_DIR}" "${NGINX_ENABLED_DIR}"
   sed \
     -e "s|server_name _;|server_name ${SERVER_NAME};|g" \
-    -e "s|localhost:6080|${API_BIND}|g" \
+    -e "s|127.0.0.1:6080|${API_BIND}|g" \
     "${REPO_DIR}/deploy/nginx/cross-market-monitor.conf" > "${NGINX_AVAILABLE_DIR}/${NGINX_SITE_NAME}"
   ln -sf "${NGINX_AVAILABLE_DIR}/${NGINX_SITE_NAME}" "${NGINX_ENABLED_DIR}/${NGINX_SITE_NAME}"
   nginx -t

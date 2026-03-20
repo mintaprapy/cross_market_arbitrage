@@ -467,7 +467,7 @@ curl -sf http://localhost:6080/api/health
 0.0.0.0:6080
 ```
 
-Nginx 在同机回源时可以这样代理：
+Nginx 在同机回源时建议显式使用 IPv4 回环地址，避免 `localhost` 被解析到 `::1`：
 
 ```nginx
 server {
@@ -475,7 +475,7 @@ server {
     server_name your.domain.com;
 
     location / {
-        proxy_pass http://localhost:6080;
+        proxy_pass http://127.0.0.1:6080;
         proxy_http_version 1.1;
 
         proxy_set_header Host $host;
@@ -502,7 +502,7 @@ sudo systemctl reload nginx
 如果你已经有 HTTPS 证书，只需要在现有 `443` server block 里把 `location /` 指向：
 
 ```text
-http://localhost:6080
+http://127.0.0.1:6080
 ```
 
 即可。

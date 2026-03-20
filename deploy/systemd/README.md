@@ -135,8 +135,8 @@ sudo ./deploy/bin/post-deploy-check.sh
 deploy/nginx/cross-market-monitor.conf
 ```
 
-Nginx 同机回源可以继续指向本机：
+Nginx 同机回源建议显式指向 IPv4 回环地址：
 
 ```text
-http://localhost:6080
+http://127.0.0.1:6080
 ```

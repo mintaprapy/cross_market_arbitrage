@@ -1612,8 +1612,8 @@ class MonitorServiceTests(unittest.TestCase):
                     ],
                 }
             )
-            close_ts = datetime(2026, 3, 20, 7, 0, tzinfo=UTC)
-            now_ts = datetime(2026, 3, 20, 16, 30, tzinfo=UTC)
+            close_ts = datetime(2026, 3, 20, 18, 30, tzinfo=UTC)
+            now_ts = datetime(2026, 3, 20, 19, 30, tzinfo=UTC)
             repository.insert_raw_quote(
                 "AU_XAU_TEST",
                 "domestic",
@@ -1650,6 +1650,83 @@ class MonitorServiceTests(unittest.TestCase):
             snapshot = service.latest_snapshots["AU_XAU_TEST"]
             self.assertEqual(snapshot.domestic_last_raw, 100.0)
             self.assertEqual(snapshot.fx_rate, 7.0)
+
+    def test_keeps_domestic_price_live_during_friday_night_session(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repository = SQLiteRepository(f"{tmp_dir}/monitor.db")
+            config = MonitorConfig.model_validate(
+                {
+                    "app": {
+                        "name": "test",
+                        "timezone": "Asia/Shanghai",
+                        "fx_source": "fx",
+                        "domestic_weekends_closed": True,
+                        "sqlite_path": f"{tmp_dir}/monitor.db",
+                    },
+                    "sources": {
+                        "domestic": {"kind": "mock_quote", "base_url": "http://local"},
+                        "overseas": {"kind": "mock_quote", "base_url": "http://local"},
+                        "fx": {"kind": "mock_fx", "base_url": "http://local"},
+                    },
+                    "pairs": [
+                        {
+                            "group_name": "AU_XAU_TEST",
+                            "domestic_source": "domestic",
+                            "domestic_symbol": "nf_AU0",
+                            "domestic_label": "AU Main",
+                            "overseas_source": "overseas",
+                            "overseas_symbol": "XAU",
+                            "overseas_label": "XAU",
+                            "formula": "gold",
+                            "domestic_unit": "CNY_PER_GRAM",
+                            "target_unit": "USD_PER_OUNCE",
+                            "thresholds": {
+                                "stale_seconds": 7200,
+                                "max_skew_seconds": 7200,
+                            },
+                            "trading_sessions_local": ["09:00-10:00", "13:30-15:00", "21:00-02:30"],
+                        }
+                    ],
+                }
+            )
+            close_ts = datetime(2026, 3, 20, 7, 0, tzinfo=UTC)
+            now_ts = datetime(2026, 3, 20, 14, 30, tzinfo=UTC)
+            repository.insert_raw_quote(
+                "AU_XAU_TEST",
+                "domestic",
+                MarketQuote(
+                    source_name="domestic",
+                    symbol="nf_AU0",
+                    label="AU Main",
+                    ts=close_ts,
+                    last=100.0,
+                    bid=99.9,
+                    ask=100.1,
+                    raw_payload="day-close",
+                ),
+            )
+            repository.insert_fx_rate(
+                FXQuote(
+                    source_name="fx",
+                    pair="USD/CNY",
+                    ts=close_ts - timedelta(minutes=5),
+                    rate=7.0,
+                    raw_payload="day-close-fx",
+                )
+            )
+
+            service = MonitorService(config, repository)
+            service.adapters["domestic"] = FixedTimestampQuoteAdapter("domestic", now_ts, 101.0, 100.9, 101.1)
+            service.adapters["overseas"] = StaticQuoteAdapter("overseas", 5100.0, 5099.0, 5101.0)
+            service.adapters["fx"] = FixedTimestampFxAdapter("fx", now_ts, 7.2)
+
+            with mock.patch("cross_market_monitor.application.common.utc_now", return_value=now_ts):
+                with mock.patch("cross_market_monitor.application.monitor.snapshot_builder.utc_now", return_value=now_ts):
+                    asyncio.run(service.poll_once())
+
+            snapshot = service.latest_snapshots["AU_XAU_TEST"]
+            self.assertEqual(snapshot.domestic_last_raw, 101.0)
+            self.assertEqual(snapshot.fx_rate, 7.2)
 
     def test_freezes_domestic_price_and_fx_during_holiday_gap(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

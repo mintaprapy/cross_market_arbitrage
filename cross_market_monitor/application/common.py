@@ -289,10 +289,16 @@ def _session_window_for_anchor(
     start_dt = datetime.combine(anchor_date, start_time, tzinfo=timezone)
     end_dt = datetime.combine(anchor_date, end_time, tzinfo=timezone)
     if end_time <= start_time:
-        next_day = anchor_date + timedelta(days=1)
-        if not (
-            is_trading_day_local(anchor_date, non_trading_dates=non_trading_dates, weekends_closed=weekends_closed)
-            and is_trading_day_local(next_day, non_trading_dates=non_trading_dates, weekends_closed=weekends_closed)
+        if not is_trading_day_local(
+            anchor_date,
+            non_trading_dates=non_trading_dates,
+            weekends_closed=weekends_closed,
+        ):
+            return None
+        if _has_holiday_gap_before_next_trading_day(
+            anchor_date,
+            non_trading_dates=non_trading_dates,
+            weekends_closed=weekends_closed,
         ):
             return None
         end_dt += timedelta(days=1)
@@ -322,6 +328,45 @@ def _session_end_for_anchor(
     if window is None:
         return None
     return window[1]
+
+
+def _has_holiday_gap_before_next_trading_day(
+    anchor_date: date,
+    *,
+    non_trading_dates: set[date],
+    weekends_closed: bool,
+    lookahead_days: int = 14,
+) -> bool:
+    next_trading_day = _next_trading_day_after(
+        anchor_date,
+        non_trading_dates=non_trading_dates,
+        weekends_closed=weekends_closed,
+        lookahead_days=lookahead_days,
+    )
+    if next_trading_day is None:
+        return True
+    gap_days = (next_trading_day - anchor_date).days
+    if gap_days <= 1:
+        return False
+    for offset in range(1, gap_days):
+        gap_date = anchor_date + timedelta(days=offset)
+        if gap_date in non_trading_dates:
+            return True
+    return False
+
+
+def _next_trading_day_after(
+    anchor_date: date,
+    *,
+    non_trading_dates: set[date],
+    weekends_closed: bool,
+    lookahead_days: int = 14,
+) -> date | None:
+    for offset in range(1, lookahead_days + 1):
+        candidate = anchor_date + timedelta(days=offset)
+        if is_trading_day_local(candidate, non_trading_dates=non_trading_dates, weekends_closed=weekends_closed):
+            return candidate
+    return None
 
 
 def build_worker_runtime_state(context) -> WorkerRuntimeState:

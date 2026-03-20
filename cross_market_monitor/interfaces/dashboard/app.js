@@ -1118,6 +1118,34 @@
       return !nonTradingDateSet.has(localDateKey(date));
     }
 
+    function nextTradingDateAfter(anchorDate, nonTradingDateSet, weekendsClosed, lookaheadDays = 14) {
+      for (let offset = 1; offset <= lookaheadDays; offset += 1) {
+        const candidate = shiftLocalDate(anchorDate, offset);
+        if (isTradingDayLocal(candidate, nonTradingDateSet, weekendsClosed)) {
+          return candidate;
+        }
+      }
+      return null;
+    }
+
+    function hasHolidayGapBeforeNextTradingDay(anchorDate, nonTradingDateSet, weekendsClosed) {
+      const nextTradingDate = nextTradingDateAfter(anchorDate, nonTradingDateSet, weekendsClosed);
+      if (!nextTradingDate) {
+        return true;
+      }
+      const gapDays = Math.round((nextTradingDate.getTime() - anchorDate.getTime()) / 86400000);
+      if (gapDays <= 1) {
+        return false;
+      }
+      for (let offset = 1; offset < gapDays; offset += 1) {
+        const gapDate = shiftLocalDate(anchorDate, offset);
+        if (nonTradingDateSet.has(localDateKey(gapDate))) {
+          return true;
+        }
+      }
+      return false;
+    }
+
     function isTimestampWithinTradingSessions(timestamp, sessions, options = {}) {
       if (!timestamp || !sessions || !sessions.length) {
         return true;
@@ -1142,10 +1170,9 @@
           const inSession = minutes >= startMinutes || minutes <= endMinutes;
           if (!inSession) return false;
           const anchorDate = minutes >= startMinutes ? currentDate : shiftLocalDate(currentDate, -1);
-          const nextTradingDate = shiftLocalDate(anchorDate, 1);
           return (
             isTradingDayLocal(anchorDate, nonTradingDateSet, weekendsClosed)
-            && isTradingDayLocal(nextTradingDate, nonTradingDateSet, weekendsClosed)
+            && !hasHolidayGapBeforeNextTradingDay(anchorDate, nonTradingDateSet, weekendsClosed)
           );
         }
         return (

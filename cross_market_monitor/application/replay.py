@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from math import sqrt
 from statistics import mean, pstdev
 
 from cross_market_monitor.domain.models import PairConfig, ReplayHighlight, ReplayReport, ReplaySignalEvent
@@ -8,9 +9,16 @@ from cross_market_monitor.infrastructure.repository import SQLiteRepository
 
 
 class ReplayAnalyzer:
-    def __init__(self, repository: SQLiteRepository, pairs: list[PairConfig]) -> None:
+    def __init__(
+        self,
+        repository: SQLiteRepository,
+        pairs: list[PairConfig],
+        *,
+        target_daily_vol_pct: float = 0.015,
+    ) -> None:
         self.repository = repository
         self.pairs = {pair.group_name: pair for pair in pairs}
+        self.target_daily_vol_pct = target_daily_vol_pct
 
     def analyze(
         self,
@@ -32,13 +40,15 @@ class ReplayAnalyzer:
         if not rows:
             return ReplayReport(group_name=group_name, sample_count=0).model_dump(mode="json")
 
-        statuses = {"ok": 0, "partial": 0, "stale": 0, "error": 0}
+        statuses = {"ok": 0, "partial": 0, "stale": 0, "error": 0, "paused": 0}
         for row in rows:
             statuses[row["status"]] = statuses.get(row["status"], 0) + 1
 
         spreads = [row["spread"] for row in rows if row["spread"] is not None]
         spread_pcts = [row["spread_pct"] for row in rows if row["spread_pct"] is not None]
         zscores = [row["zscore"] for row in rows if row["zscore"] is not None]
+        domestic_prices = [row["normalized_last"] for row in rows if row["normalized_last"] is not None]
+        overseas_prices = [row["overseas_last"] for row in rows if row["overseas_last"] is not None]
 
         convergence_count = divergence_count = flat_count = 0
         previous_spread: float | None = None
@@ -58,15 +68,37 @@ class ReplayAnalyzer:
             previous_spread = current
 
         denominator = convergence_count + divergence_count + flat_count
+        hedge_ratio, hedge_intercept = _ols_beta_intercept(domestic_prices, overseas_prices)
+        realized_daily_vol_pct = _realized_daily_vol_pct(spreads, domestic_prices)
+        recommended_position_scale = None
+        if realized_daily_vol_pct not in (None, 0):
+            recommended_position_scale = self.target_daily_vol_pct / realized_daily_vol_pct
+
+        round_trip_costs = [
+            _round_trip_cost(pair, row["normalized_last"], row["overseas_last"])
+            for row in rows
+            if row["normalized_last"] is not None and row["overseas_last"] is not None
+        ]
+        net_edges = [
+            abs(row["spread"]) - cost
+            for row, cost in zip(
+                [row for row in rows if row["spread"] is not None and row["normalized_last"] is not None and row["overseas_last"] is not None],
+                round_trip_costs,
+            )
+        ]
+        profitable_after_cost_count = sum(1 for edge in net_edges if edge > 0)
+
         highlights = self._top_highlights(rows, limit=highlight_limit)
         signals = self._signal_entries(rows, pair, signal_limit=signal_limit)
+        signals.extend(self._cost_signals(rows, pair, signal_limit=signal_limit))
+        signals = signals[-signal_limit:]
 
         report = ReplayReport(
             group_name=group_name,
             sample_count=len(rows),
             ok_count=statuses.get("ok", 0),
             partial_count=statuses.get("partial", 0),
-            stale_count=statuses.get("stale", 0),
+            stale_count=statuses.get("stale", 0) + statuses.get("paused", 0),
             error_count=statuses.get("error", 0),
             start_ts=_parse_iso(rows[0]["ts"]),
             end_ts=_parse_iso(rows[-1]["ts"]),
@@ -92,6 +124,13 @@ class ReplayAnalyzer:
             flat_count=flat_count,
             convergence_ratio=(convergence_count / denominator) if denominator else None,
             divergence_ratio=(divergence_count / denominator) if denominator else None,
+            hedge_ratio_ols=hedge_ratio,
+            hedge_intercept=hedge_intercept,
+            realized_daily_vol_pct=realized_daily_vol_pct,
+            recommended_position_scale=recommended_position_scale,
+            average_round_trip_cost=_safe_mean(round_trip_costs),
+            average_net_edge_after_cost=_safe_mean(net_edges),
+            profitable_after_cost_count=profitable_after_cost_count,
             top_highlights=highlights,
             signal_entries=signals,
         )
@@ -101,41 +140,50 @@ class ReplayAnalyzer:
         scored_rows: list[tuple[float, ReplayHighlight]] = []
         for row in rows:
             if row["zscore"] is not None:
-                highlight = ReplayHighlight(
-                    ts=_parse_iso(row["ts"]),
-                    metric="zscore",
-                    score=abs(row["zscore"]),
-                    spread=row["spread"],
-                    spread_pct=row["spread_pct"],
-                    zscore=row["zscore"],
-                    status=row["status"],
+                scored_rows.append(
+                    (
+                        abs(row["zscore"]),
+                        ReplayHighlight(
+                            ts=_parse_iso(row["ts"]),
+                            metric="zscore",
+                            score=abs(row["zscore"]),
+                            spread=row["spread"],
+                            spread_pct=row["spread_pct"],
+                            zscore=row["zscore"],
+                            status=row["status"],
+                        ),
+                    )
                 )
-                scored_rows.append((highlight.score, highlight))
-                continue
-            if row["spread_pct"] is not None:
-                highlight = ReplayHighlight(
-                    ts=_parse_iso(row["ts"]),
-                    metric="spread_pct",
-                    score=abs(row["spread_pct"]),
-                    spread=row["spread"],
-                    spread_pct=row["spread_pct"],
-                    zscore=row["zscore"],
-                    status=row["status"],
+            elif row["spread_pct"] is not None:
+                scored_rows.append(
+                    (
+                        abs(row["spread_pct"]),
+                        ReplayHighlight(
+                            ts=_parse_iso(row["ts"]),
+                            metric="spread_pct",
+                            score=abs(row["spread_pct"]),
+                            spread=row["spread"],
+                            spread_pct=row["spread_pct"],
+                            zscore=row["zscore"],
+                            status=row["status"],
+                        ),
+                    )
                 )
-                scored_rows.append((highlight.score, highlight))
-                continue
-            if row["spread"] is not None:
-                highlight = ReplayHighlight(
-                    ts=_parse_iso(row["ts"]),
-                    metric="spread_abs",
-                    score=abs(row["spread"]),
-                    spread=row["spread"],
-                    spread_pct=row["spread_pct"],
-                    zscore=row["zscore"],
-                    status=row["status"],
+            elif row["spread"] is not None:
+                scored_rows.append(
+                    (
+                        abs(row["spread"]),
+                        ReplayHighlight(
+                            ts=_parse_iso(row["ts"]),
+                            metric="spread_abs",
+                            score=abs(row["spread"]),
+                            spread=row["spread"],
+                            spread_pct=row["spread_pct"],
+                            zscore=row["zscore"],
+                            status=row["status"],
+                        ),
+                    )
                 )
-                scored_rows.append((highlight.score, highlight))
-
         scored_rows.sort(key=lambda item: item[0], reverse=True)
         return [item[1] for item in scored_rows[:limit]]
 
@@ -174,6 +222,29 @@ class ReplayAnalyzer:
                 active_zscore = in_breach
         return entries[-signal_limit:]
 
+    def _cost_signals(self, rows: list[dict], pair: PairConfig, signal_limit: int) -> list[ReplaySignalEvent]:
+        entries: list[ReplaySignalEvent] = []
+        active = False
+        for row in rows:
+            if row["spread"] is None or row["normalized_last"] is None or row["overseas_last"] is None:
+                continue
+            cost = _round_trip_cost(pair, row["normalized_last"], row["overseas_last"])
+            edge = abs(row["spread"]) - cost
+            in_breach = edge <= 0
+            if in_breach and not active:
+                entries.append(
+                    ReplaySignalEvent(
+                        ts=_parse_iso(row["ts"]),
+                        group_name=pair.group_name,
+                        trigger="cost_edge",
+                        value=edge,
+                        threshold=0.0,
+                        direction="negative" if edge < 0 else "positive",
+                    )
+                )
+            active = in_breach
+        return entries[-signal_limit:]
+
 
 def _safe_mean(values: list[float]) -> float | None:
     if not values:
@@ -189,3 +260,36 @@ def _safe_std(values: list[float]) -> float | None:
 
 def _parse_iso(value: str) -> datetime:
     return datetime.fromisoformat(value)
+
+
+def _ols_beta_intercept(x_values: list[float], y_values: list[float]) -> tuple[float | None, float | None]:
+    if len(x_values) < 2 or len(y_values) < 2 or len(x_values) != len(y_values):
+        return None, None
+    x_mean = mean(x_values)
+    y_mean = mean(y_values)
+    numerator = sum((x - x_mean) * (y - y_mean) for x, y in zip(x_values, y_values))
+    denominator = sum((x - x_mean) ** 2 for x in x_values)
+    if denominator == 0:
+        return None, None
+    beta = numerator / denominator
+    intercept = y_mean - beta * x_mean
+    return beta, intercept
+
+
+def _realized_daily_vol_pct(spreads: list[float], domestic_prices: list[float]) -> float | None:
+    if len(spreads) < 2 or len(domestic_prices) < 2:
+        return None
+    spread_std = pstdev(spreads)
+    baseline = mean(abs(price) for price in domestic_prices if price is not None)
+    if baseline == 0:
+        return None
+    return (spread_std / baseline) * sqrt(24)
+
+
+def _round_trip_cost(pair: PairConfig, domestic_price: float, overseas_price: float) -> float:
+    domestic_bps = pair.costs.domestic_fee_bps + pair.costs.domestic_slippage_bps
+    overseas_bps = pair.costs.overseas_fee_bps + pair.costs.overseas_slippage_bps
+    funding_bps = pair.costs.funding_bps_per_day * (pair.costs.holding_hours / 24.0)
+    domestic_cost = abs(domestic_price) * domestic_bps / 10_000
+    overseas_cost = abs(overseas_price) * (overseas_bps + funding_bps) / 10_000
+    return domestic_cost + overseas_cost

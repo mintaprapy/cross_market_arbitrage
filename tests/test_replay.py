@@ -42,7 +42,7 @@ class ReplayAnalyzerTests(unittest.TestCase):
                         tax_mode="gross",
                         target_unit="USD_PER_OUNCE",
                         status="ok",
-                        normalized_last=100.0,
+                        normalized_last=100.0 + index,
                         overseas_last=100.0 + spread,
                         spread=spread,
                         spread_pct=spread_pcts[index],
@@ -59,6 +59,8 @@ class ReplayAnalyzerTests(unittest.TestCase):
             self.assertEqual(report["convergence_count"], 2)
             self.assertEqual(report["divergence_count"], 1)
             self.assertEqual(len(report["signal_entries"]), 4)
+            self.assertIsNotNone(report["average_round_trip_cost"])
+            self.assertIsNotNone(report["realized_daily_vol_pct"])
 
 
 if __name__ == "__main__":

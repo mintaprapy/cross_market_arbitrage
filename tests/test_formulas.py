@@ -1,6 +1,6 @@
 import unittest
 
-from cross_market_monitor.domain.formulas import TROY_OUNCE_IN_GRAMS, normalize_domestic_price
+from cross_market_monitor.domain.formulas import TROY_OUNCE_IN_GRAMS, compute_spread, normalize_domestic_price
 from cross_market_monitor.domain.models import PairConfig
 
 
@@ -45,6 +45,11 @@ class FormulaTests(unittest.TestCase):
         self.assertIsNotNone(gross)
         self.assertIsNotNone(net)
         self.assertLess(net or 0, gross or 0)
+
+    def test_spread_uses_domestic_minus_overseas_and_symmetric_pct(self) -> None:
+        spread, spread_pct = compute_spread(100.0, 90.0)
+        self.assertEqual(spread, 10.0)
+        self.assertAlmostEqual(spread_pct or 0, 20.0 / 190.0)
 
 
 if __name__ == "__main__":

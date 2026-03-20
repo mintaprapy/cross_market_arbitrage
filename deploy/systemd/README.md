@@ -1,0 +1,158 @@
+# Ubuntu systemd 部署
+
+当前默认推荐双进程部署：
+
+- `cross-market-monitor-worker`
+  负责采集、计算、告警和写库
+- `cross-market-monitor-api`
+  负责 FastAPI、Dashboard、控制接口和历史回补入口，不跑主轮询
+
+旧的 `cross-market-monitor.service` 仍可用于单进程兼容部署，但不再是默认推荐方式。
+
+默认约定：
+
+- 项目目录：`/srv/cross_market_arbitrage`
+- 虚拟环境：`/srv/cross_market_arbitrage/.venv`
+- systemd 环境文件：`/etc/default/cross-market-monitor`
+- 监听地址：`127.0.0.1:6080`
+
+## 1. 同步代码
+
+```bash
+sudo mkdir -p /srv/cross_market_arbitrage
+sudo chown -R ubuntu:ubuntu /srv/cross_market_arbitrage
+```
+
+把项目放到：
+
+```bash
+/srv/cross_market_arbitrage
+```
+
+## 2. 安装 Python 环境
+
+```bash
+cd /srv/cross_market_arbitrage
+cp config/monitor.example.yaml config/monitor.yaml
+python3 -m venv .venv
+. .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -e ".[tqsdk,parquet]"
+```
+
+如果你不需要 `TqSdk` 和 `Parquet` 导出，也可以只安装基础依赖：
+
+```bash
+python -m pip install -e .
+```
+
+## 3. 配置 TqSdk 认证
+
+```bash
+sudo cp deploy/systemd/cross-market-monitor.env.example /etc/default/cross-market-monitor
+sudo chmod 600 /etc/default/cross-market-monitor
+sudo editor /etc/default/cross-market-monitor
+```
+
+如果线上不需要 TqSdk，可留空或直接不创建这个文件。
+
+## 4. 安装 systemd 服务
+
+推荐安装 worker + api 两个 unit：
+
+```bash
+sudo cp deploy/systemd/cross-market-monitor-worker.service /etc/systemd/system/cross-market-monitor-worker.service
+sudo cp deploy/systemd/cross-market-monitor-api.service /etc/systemd/system/cross-market-monitor-api.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now cross-market-monitor-worker
+sudo systemctl enable --now cross-market-monitor-api
+```
+
+如果你希望直接按仓库模板安装，可以执行：
+
+```bash
+sudo ./deploy/bin/install-ubuntu.sh
+```
+
+这个脚本会自动根据本地 `config/monitor.yaml` 渲染：
+
+- `--config` 路径
+- API 的 `--host / --port`
+- `ReadWritePaths` 对应的 SQLite / export 目录
+- `User / Group / WorkingDirectory`
+
+## 5. 常用命令
+
+查看状态：
+
+```bash
+sudo systemctl status cross-market-monitor-worker
+sudo systemctl status cross-market-monitor-api
+```
+
+重启：
+
+```bash
+sudo systemctl restart cross-market-monitor-worker
+sudo systemctl restart cross-market-monitor-api
+```
+
+停止：
+
+```bash
+sudo systemctl stop cross-market-monitor-worker
+sudo systemctl stop cross-market-monitor-api
+```
+
+查看日志：
+
+```bash
+sudo journalctl -u cross-market-monitor-worker -f
+sudo journalctl -u cross-market-monitor-api -f
+```
+
+部署完成后，可以直接跑：
+
+```bash
+sudo ./deploy/bin/post-deploy-check.sh
+```
+
+## 6. 修改路径时需要同步改的项
+
+如果你不用安装脚本，而是手动复制 unit，那么当这些项发生变化时需要一起改：
+
+- `/etc/systemd/system/cross-market-monitor-worker.service` 里的 `WorkingDirectory`
+- `/etc/systemd/system/cross-market-monitor-worker.service` 里的 `ExecStart`
+- `/etc/systemd/system/cross-market-monitor-worker.service` 里的 `ReadWritePaths`
+- `/etc/systemd/system/cross-market-monitor-api.service` 里的 `WorkingDirectory`
+- `/etc/systemd/system/cross-market-monitor-api.service` 里的 `ExecStart`
+- `/etc/systemd/system/cross-market-monitor-api.service` 里的 `ReadWritePaths`
+- 如果用了反向代理，也同步改代理目标地址
+
+## 7. 暴露方式
+
+当前 service 默认只监听本机：
+
+```text
+127.0.0.1:6080
+```
+
+适合放在 Nginx/Caddy 后面。
+
+仓库里已经提供了可直接使用的 Nginx 模板：
+
+```text
+deploy/nginx/cross-market-monitor.conf
+```
+
+如果你要直接对外监听，可以把 `ExecStart` 里的：
+
+```text
+--host 127.0.0.1
+```
+
+改成：
+
+```text
+--host 0.0.0.0
+```

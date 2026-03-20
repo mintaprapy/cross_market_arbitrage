@@ -1,40 +1,36 @@
 from __future__ import annotations
 
-import asyncio
-import logging
-from contextlib import suppress
 from datetime import UTC, datetime
+from zoneinfo import ZoneInfo
 
-from cross_market_monitor.domain.formulas import (
-    compute_executable_spreads,
-    compute_spread,
-    normalize_domestic_quote,
-)
-from cross_market_monitor.domain.models import (
-    AlertEvent,
-    FXQuote,
-    MarketQuote,
-    MonitorConfig,
-    NotificationDelivery,
-    PairConfig,
-    RuntimeHealth,
-    SourceConfig,
-    SpreadSnapshot,
-)
+from cross_market_monitor.application.common import default_overseas_symbol, utc_now
+from cross_market_monitor.application.context import ServiceContext
+from cross_market_monitor.application.control.route_preference_service import RoutePreferenceService
+from cross_market_monitor.application.history.history_service import HistoryService
+from cross_market_monitor.application.history.retention_service import RetentionService
+from cross_market_monitor.application.monitor.alert_service import AlertService
+from cross_market_monitor.application.monitor.fx_service import FXService
+from cross_market_monitor.application.monitor.poll_cycle import PollCycleService
+from cross_market_monitor.application.monitor.quote_router import QuoteRouter
+from cross_market_monitor.application.monitor.runtime import MonitorRuntime, RuntimeService
+from cross_market_monitor.application.monitor.snapshot_builder import SnapshotBuilder
+from cross_market_monitor.application.monitor.source_health import SourceHealthRecorder
+from cross_market_monitor.application.query.query_service import QueryService
+from cross_market_monitor.application.replay import ReplayAnalyzer
+from cross_market_monitor.domain.models import FXQuote, MarketQuote, MonitorConfig, SourceConfig, SourceHealth
 from cross_market_monitor.domain.stats import RollingWindow
 from cross_market_monitor.infrastructure.http_client import HttpClient
+from cross_market_monitor.infrastructure.marketdata.binance import BinanceFuturesAdapter
+from cross_market_monitor.infrastructure.marketdata.cme import CmeReferenceAdapter
 from cross_market_monitor.infrastructure.marketdata.frankfurter import FrankfurterFxAdapter
+from cross_market_monitor.infrastructure.marketdata.hyperliquid import HyperliquidAdapter
+from cross_market_monitor.infrastructure.marketdata.open_er_api import OpenErApiFxAdapter
 from cross_market_monitor.infrastructure.marketdata.okx import OkxSwapAdapter
-from cross_market_monitor.infrastructure.marketdata.sina import SinaFuturesAdapter
+from cross_market_monitor.infrastructure.marketdata.shfe import ShfeDelayMarketAdapter
+from cross_market_monitor.infrastructure.marketdata.sina import SinaFuturesAdapter, SinaFxAdapter
+from cross_market_monitor.infrastructure.marketdata.tqsdk import TqSdkMainAdapter
 from cross_market_monitor.infrastructure.notifiers import build_notifier
 from cross_market_monitor.infrastructure.repository import SQLiteRepository
-from cross_market_monitor.application.replay import ReplayAnalyzer
-
-LOGGER = logging.getLogger("cross_market_monitor")
-
-
-def utc_now() -> datetime:
-    return datetime.now(UTC)
 
 
 class MockQuoteAdapter:
@@ -71,13 +67,31 @@ class MockFxAdapter:
         )
 
 
-def _build_adapter(source_name: str, source_config: SourceConfig, http_client: HttpClient):
+def _build_adapter(source_name: str, source_config: SourceConfig, timeout_sec: int):
+    http_client = HttpClient(
+        timeout_sec=timeout_sec,
+        verify_ssl=source_config.verify_ssl,
+    )
     if source_config.kind == "sina_futures":
         return SinaFuturesAdapter(source_name, source_config, http_client)
+    if source_config.kind == "sina_fx":
+        return SinaFxAdapter(source_name, source_config, http_client)
+    if source_config.kind == "shfe_delaymarket":
+        return ShfeDelayMarketAdapter(source_name, source_config, http_client)
+    if source_config.kind == "tqsdk_main":
+        return TqSdkMainAdapter(source_name, source_config, http_client)
     if source_config.kind == "okx_swap":
         return OkxSwapAdapter(source_name, source_config, http_client)
+    if source_config.kind == "binance_futures":
+        return BinanceFuturesAdapter(source_name, source_config, http_client)
+    if source_config.kind == "hyperliquid":
+        return HyperliquidAdapter(source_name, source_config, http_client)
+    if source_config.kind == "cme_reference":
+        return CmeReferenceAdapter(source_name, source_config, http_client)
     if source_config.kind == "frankfurter_fx":
         return FrankfurterFxAdapter(source_name, source_config, http_client)
+    if source_config.kind == "open_er_api_fx":
+        return OpenErApiFxAdapter(source_name, source_config, http_client)
     if source_config.kind == "mock_quote":
         return MockQuoteAdapter(source_name)
     if source_config.kind == "mock_fx":
@@ -89,19 +103,18 @@ class MonitorService:
     def __init__(self, config: MonitorConfig, repository: SQLiteRepository) -> None:
         self.config = config
         self.repository = repository
-        self.started_at = utc_now()
-        self.last_poll_started_at: datetime | None = None
-        self.last_poll_finished_at: datetime | None = None
-        self.is_polling = False
-        self.total_cycles = 0
-        self.latest_fx_quote: FXQuote | None = None
-        self.latest_snapshots: dict[str, SpreadSnapshot] = {}
-        self._stop_event = asyncio.Event()
-        self._cooldowns: dict[tuple[str, str], datetime] = {}
+        self._local_tz = self._resolve_timezone(config.app.timezone)
+        self._pair_map = {pair.group_name: pair for pair in config.pairs}
+        self._enabled_pairs = [pair for pair in config.pairs if pair.enabled]
+        self._preferred_domestic_symbols: dict[str, str] = {
+            pair.group_name: pair.domestic_symbol for pair in self._enabled_pairs
+        }
+        self._preferred_overseas_symbols: dict[str, str] = {
+            pair.group_name: default_overseas_symbol(pair) for pair in self._enabled_pairs
+        }
 
-        http_client = HttpClient(timeout_sec=config.app.http_timeout_sec)
         self.adapters = {
-            source_name: _build_adapter(source_name, source_config, http_client)
+            source_name: _build_adapter(source_name, source_config, config.app.http_timeout_sec)
             for source_name, source_config in config.sources.items()
         }
         self.notifiers = [build_notifier(notifier) for notifier in config.notifiers if notifier.enabled]
@@ -110,87 +123,182 @@ class MonitorService:
                 config.app.rolling_window_size,
                 seed=repository.load_recent_spreads(pair.group_name, config.app.rolling_window_size),
             )
-            for pair in config.pairs
-            if pair.enabled
+            for pair in self._enabled_pairs
         }
-        self.replay = ReplayAnalyzer(repository, [pair for pair in config.pairs if pair.enabled])
+        self.fx_window = RollingWindow(
+            config.app.fx_window_size,
+            seed=repository.load_recent_fx_rates(config.app.fx_source, config.app.fx_window_size),
+        )
+        self.source_health = {
+            source_name: SourceHealth(source_name=source_name, kind=source_config.kind)
+            for source_name, source_config in config.sources.items()
+        }
+        self.replay = ReplayAnalyzer(
+            repository,
+            self._enabled_pairs,
+            target_daily_vol_pct=config.app.replay_target_daily_vol_pct,
+        )
+
+        self.context = ServiceContext(
+            config=config,
+            repository=repository,
+            adapters=self.adapters,
+            notifiers=self.notifiers,
+            windows=self.windows,
+            fx_window=self.fx_window,
+            source_health=self.source_health,
+            replay=self.replay,
+            local_tz=self._local_tz,
+            pair_map=self._pair_map,
+            enabled_pairs=self._enabled_pairs,
+            preferred_domestic_symbols=self._preferred_domestic_symbols,
+            preferred_overseas_symbols=self._preferred_overseas_symbols,
+        )
+        self.latest_snapshots = self.context.latest_snapshots
+
+        self.health_recorder = SourceHealthRecorder(self.context)
+        self.route_preferences = RoutePreferenceService(self.context)
+        self.history = HistoryService(self.context, self.route_preferences, self.health_recorder)
+        self.retention = RetentionService(self.context)
+        self.fx_service = FXService(self.context, self.health_recorder)
+        self.quote_router = QuoteRouter(self.context, self.health_recorder)
+        self.alert_service = AlertService(self.context, self.history)
+        self.snapshot_builder = SnapshotBuilder(
+            self.context,
+            self.route_preferences,
+            self.quote_router,
+            self.fx_service,
+            self.alert_service,
+        )
+        self.poll_cycle = PollCycleService(self.context, self.fx_service, self.snapshot_builder)
+        self.query = QueryService(self.context, self.route_preferences, self.history)
+        self.runtime = RuntimeService(self.context, self.history, self.retention, self.poll_cycle)
+
+        self._preload_cached_state()
+        self.route_preferences.load_persisted_preferences()
+
+    @property
+    def started_at(self) -> datetime:
+        return self.context.started_at
+
+    @property
+    def last_poll_started_at(self) -> datetime | None:
+        return self.context.last_poll_started_at
+
+    @property
+    def last_poll_finished_at(self) -> datetime | None:
+        return self.context.last_poll_finished_at
+
+    @property
+    def is_polling(self) -> bool:
+        return self.context.is_polling
+
+    @property
+    def total_cycles(self) -> int:
+        return self.context.total_cycles
+
+    @property
+    def latest_fx_quote(self) -> FXQuote | None:
+        return self.context.latest_fx_quote
+
+    @property
+    def latest_fx_jump_pct(self) -> float | None:
+        return self.context.latest_fx_jump_pct
 
     async def run_forever(self) -> None:
-        while not self._stop_event.is_set():
-            try:
-                await self.poll_once()
-            except Exception:  # pragma: no cover - background task guard
-                LOGGER.exception("Polling cycle failed")
-            try:
-                await asyncio.wait_for(self._stop_event.wait(), timeout=self.config.app.poll_interval_sec)
-            except TimeoutError:
-                continue
+        await self.runtime.run_forever()
+
+    async def startup(self) -> None:
+        if self.context.startup_completed:
+            return
+        await self._maybe_backfill_tqsdk_shadow_history()
+        self._start_tqsdk_shadow_collector()
+        self.context.startup_completed = True
 
     async def shutdown(self) -> None:
-        self._stop_event.set()
+        await self.runtime.shutdown()
 
-    async def poll_once(self) -> list[SpreadSnapshot]:
-        if self.is_polling:
-            return list(self.latest_snapshots.values())
-
-        self.is_polling = True
-        self.last_poll_started_at = utc_now()
-
-        try:
-            fx_quote = await self._fetch_fx_quote()
-            self.latest_fx_quote = fx_quote
-            if fx_quote:
-                self.repository.insert_fx_rate(fx_quote)
-
-            tasks = [self._build_snapshot(pair, fx_quote) for pair in self.config.pairs if pair.enabled]
-            snapshots = await asyncio.gather(*tasks)
-            self.last_poll_finished_at = utc_now()
-            self.total_cycles += 1
-            return snapshots
-        finally:
-            self.is_polling = False
+    async def poll_once(self):
+        return await self.poll_cycle.poll_once()
 
     def get_health(self) -> dict:
-        health = RuntimeHealth(
-            started_at=self.started_at,
-            last_poll_started_at=self.last_poll_started_at,
-            last_poll_finished_at=self.last_poll_finished_at,
-            poll_interval_sec=self.config.app.poll_interval_sec,
-            rolling_window_size=self.config.app.rolling_window_size,
-            history_limit=self.config.app.history_limit,
-            is_polling=self.is_polling,
-            total_cycles=self.total_cycles,
-            latest_fx_rate=self.latest_fx_quote.rate if self.latest_fx_quote else None,
-        ).model_dump(mode="json")
-
-        health["pairs"] = [
-            {
-                "group_name": pair.group_name,
-                "status": self.latest_snapshots.get(pair.group_name).status if pair.group_name in self.latest_snapshots else "waiting",
-            }
-            for pair in self.config.pairs
-            if pair.enabled
-        ]
-        return health
+        return self.query.get_health()
 
     def get_snapshot(self) -> dict:
-        return {
-            "as_of": self.last_poll_finished_at.isoformat() if self.last_poll_finished_at else None,
-            "health": self.get_health(),
-            "snapshots": [
-                snapshot.model_dump(mode="json")
-                for snapshot in sorted(self.latest_snapshots.values(), key=lambda item: item.group_name)
-            ],
-        }
+        return self.query.get_snapshot()
 
-    def get_history(self, group_name: str, limit: int = 300) -> list[dict]:
-        return self.repository.fetch_history(group_name, limit)
+    def get_snapshot_summary(self) -> dict:
+        return self.query.get_snapshot_summary()
+
+    def get_card_view(self, group_name: str, range_key: str | None = None) -> dict:
+        return self.query.get_card_view(group_name, range_key=range_key)
+
+    def get_history(
+        self,
+        group_name: str,
+        limit: int = 300,
+        *,
+        range_key: str | None = None,
+    ) -> list[dict]:
+        return self.history.get_history(group_name, limit=limit, range_key=range_key)
 
     def get_alerts(self, limit: int = 100) -> list[dict]:
-        return self.repository.fetch_alerts(limit)
+        return self.query.get_alerts(limit)
 
     def get_notification_deliveries(self, limit: int = 100) -> list[dict]:
-        return self.repository.fetch_notification_deliveries(limit)
+        return self.query.get_notification_deliveries(limit)
+
+    def get_job_runs(self) -> list[dict]:
+        return self.query.get_job_runs()
+
+    def get_source_health(self) -> list[dict]:
+        return self.query.get_source_health()
+
+    def get_domestic_route_options(self, group_name: str, *, refresh_dynamic: bool = True) -> dict:
+        return self.route_preferences.get_domestic_route_options(group_name, refresh_dynamic=refresh_dynamic)
+
+    def set_domestic_route_preference(self, group_name: str, symbol: str | None) -> dict:
+        return self.route_preferences.set_domestic_route_preference(group_name, symbol)
+
+    def get_overseas_route_options(self, group_name: str) -> dict:
+        return self.route_preferences.get_overseas_route_options(group_name)
+
+    def set_overseas_route_preference(self, group_name: str, symbol: str | None) -> dict:
+        return self.route_preferences.set_overseas_route_preference(group_name, symbol)
+
+    def backfill_domestic_history(
+        self,
+        group_name: str,
+        *,
+        interval: str = "5m",
+        range_key: str | None = None,
+        start_ts: str | None = None,
+        end_ts: str | None = None,
+    ) -> dict:
+        return self.history.backfill_domestic_history(
+            group_name,
+            interval=interval,
+            range_key=range_key,
+            start_ts=start_ts,
+            end_ts=end_ts,
+        )
+
+    def backfill_overseas_history(
+        self,
+        group_name: str,
+        *,
+        interval: str = "60m",
+        range_key: str | None = None,
+        start_ts: str | None = None,
+        end_ts: str | None = None,
+    ) -> dict:
+        return self.history.backfill_overseas_history(
+            group_name,
+            interval=interval,
+            range_key=range_key,
+            start_ts=start_ts,
+            end_ts=end_ts,
+        )
 
     def replay_summary(
         self,
@@ -200,318 +308,64 @@ class MonitorService:
         start_ts: str | None = None,
         end_ts: str | None = None,
     ) -> dict:
-        return self.replay.analyze(group_name, limit=limit, start_ts=start_ts, end_ts=end_ts)
+        return self.query.replay_summary(group_name, limit=limit, start_ts=start_ts, end_ts=end_ts)
 
-    async def _fetch_fx_quote(self) -> FXQuote | None:
-        source_name = self.config.app.fx_source
-        source_config = self.config.sources[source_name]
-        adapter = self.adapters[source_name]
+    def get_shadow_comparison(self, group_name: str, *, limit: int = 240) -> dict | None:
+        return self.history.get_shadow_comparison(group_name, limit=limit)
 
-        try:
-            return await asyncio.to_thread(adapter.fetch_rate, "USD", "CNY")
-        except Exception as exc:
-            LOGGER.warning("FX fetch failed from %s: %s", source_name, exc)
-            if source_config.fallback_rate:
-                return FXQuote(
-                    source_name=source_name,
-                    pair="USD/CNY",
-                    ts=utc_now(),
-                    rate=source_config.fallback_rate,
-                    raw_payload="fallback_rate",
-                )
-            return None
-
-    async def _build_snapshot(self, pair: PairConfig, fx_quote: FXQuote | None) -> SpreadSnapshot:
-        domestic_task = asyncio.to_thread(
-            self.adapters[pair.domestic_source].fetch_quote, pair.domestic_symbol, pair.domestic_label
-        )
-        overseas_task = asyncio.to_thread(
-            self.adapters[pair.overseas_source].fetch_quote, pair.overseas_symbol, pair.overseas_label
-        )
-        domestic_result, overseas_result = await asyncio.gather(domestic_task, overseas_task, return_exceptions=True)
-
-        domestic_quote = domestic_result if isinstance(domestic_result, MarketQuote) else None
-        overseas_quote = overseas_result if isinstance(overseas_result, MarketQuote) else None
-
-        errors: list[str] = []
-        if isinstance(domestic_result, Exception):
-            errors.append(f"domestic: {domestic_result}")
-        if isinstance(overseas_result, Exception):
-            errors.append(f"overseas: {overseas_result}")
-        if fx_quote is None:
-            errors.append("fx: unavailable")
-
-        if domestic_quote:
-            self.repository.insert_raw_quote(pair.group_name, "domestic", domestic_quote)
-        if overseas_quote:
-            self.repository.insert_raw_quote(pair.group_name, "overseas", overseas_quote)
-
-        normalized_quote = normalize_domestic_quote(
-            pair,
-            fx_quote.rate if fx_quote else None,
-            domestic_quote.last if domestic_quote else None,
-            domestic_quote.bid if domestic_quote else None,
-            domestic_quote.ask if domestic_quote else None,
-        )
-
-        spread, spread_pct = compute_spread(
-            overseas_quote.last if overseas_quote else None,
-            normalized_quote.last,
-        )
-        exec_buy_domestic, exec_buy_overseas = compute_executable_spreads(
-            normalized_quote.bid,
-            normalized_quote.ask,
-            overseas_quote.bid if overseas_quote else None,
-            overseas_quote.ask if overseas_quote else None,
-        )
-
-        domestic_age = _age_seconds(domestic_quote.ts) if domestic_quote else None
-        overseas_age = _age_seconds(overseas_quote.ts) if overseas_quote else None
-        fx_age = _age_seconds(fx_quote.ts) if fx_quote else None
-        max_skew = _max_skew_seconds(domestic_quote, overseas_quote, fx_quote)
-
-        status = "error"
-        if domestic_quote or overseas_quote or fx_quote:
-            status = "partial"
-        if domestic_quote and overseas_quote and fx_quote and spread is not None:
-            status = "ok"
-
-        if status == "ok":
-            if any(
-                value is not None and value > pair.thresholds.stale_seconds
-                for value in (domestic_age, overseas_age, fx_age)
-            ):
-                status = "stale"
-                errors.append("data_quality: one or more quotes are stale")
-            if max_skew is not None and max_skew > pair.thresholds.max_skew_seconds:
-                status = "stale"
-                errors.append("data_quality: quote timestamps are too far apart")
-
-        window = self.windows[pair.group_name]
-        rolling_mean = rolling_std = zscore = delta_spread = None
-        if spread is not None:
-            rolling_mean, rolling_std, zscore, delta_spread = window.summary(spread)
-            if status == "ok":
-                window.append(spread)
-
-        snapshot = SpreadSnapshot(
-            ts=utc_now(),
-            group_name=pair.group_name,
-            domestic_symbol=pair.domestic_symbol,
-            overseas_symbol=pair.overseas_symbol,
-            fx_source=self.config.app.fx_source,
-            fx_rate=fx_quote.rate if fx_quote else None,
-            formula=pair.formula,
-            formula_version=pair.formula_version,
-            tax_mode=pair.tax_mode,
-            target_unit=pair.target_unit,
-            status=status,
-            errors=errors,
-            domestic_last_raw=domestic_quote.last if domestic_quote else None,
-            domestic_bid_raw=domestic_quote.bid if domestic_quote else None,
-            domestic_ask_raw=domestic_quote.ask if domestic_quote else None,
-            overseas_last=overseas_quote.last if overseas_quote else None,
-            overseas_bid=overseas_quote.bid if overseas_quote else None,
-            overseas_ask=overseas_quote.ask if overseas_quote else None,
-            normalized_last=normalized_quote.last,
-            normalized_bid=normalized_quote.bid,
-            normalized_ask=normalized_quote.ask,
-            spread=spread,
-            spread_pct=spread_pct,
-            rolling_mean=rolling_mean,
-            rolling_std=rolling_std,
-            zscore=zscore,
-            delta_spread=delta_spread,
-            executable_buy_domestic_sell_overseas=exec_buy_domestic,
-            executable_buy_overseas_sell_domestic=exec_buy_overseas,
-            domestic_age_sec=domestic_age,
-            overseas_age_sec=overseas_age,
-            fx_age_sec=fx_age,
-            max_skew_sec=max_skew,
-        )
-        self.repository.insert_snapshot(snapshot)
-        self.latest_snapshots[pair.group_name] = snapshot
-
-        alerts = self._evaluate_alerts(pair, snapshot)
-        for alert in alerts:
-            self.repository.insert_alert(alert)
-        await self._dispatch_alerts(alerts)
-
-        return snapshot
-
-    def _evaluate_alerts(self, pair: PairConfig, snapshot: SpreadSnapshot) -> list[AlertEvent]:
-        alerts: list[AlertEvent] = []
-        now = snapshot.ts
-
-        if snapshot.status in {"partial", "stale", "error"}:
-            alerts.append(
-                self._make_alert(
-                    now,
-                    pair.group_name,
-                    "data_quality",
-                    "critical" if snapshot.status == "error" else "warning",
-                    f"{pair.group_name} data status is {snapshot.status}",
-                    {
-                        "errors": snapshot.errors,
-                        "domestic_age_sec": snapshot.domestic_age_sec,
-                        "overseas_age_sec": snapshot.overseas_age_sec,
-                        "fx_age_sec": snapshot.fx_age_sec,
-                        "max_skew_sec": snapshot.max_skew_sec,
-                    },
-                )
-            )
-
-        if snapshot.spread_pct is not None and abs(snapshot.spread_pct) >= pair.thresholds.spread_pct_abs:
-            alerts.append(
-                self._make_alert(
-                    now,
-                    pair.group_name,
-                    "spread_pct",
-                    "warning",
-                    f"{pair.group_name} spread_pct reached {snapshot.spread_pct:.2%}",
-                    {"spread_pct": snapshot.spread_pct, "spread": snapshot.spread},
-                )
-            )
-
-        if snapshot.zscore is not None and abs(snapshot.zscore) >= pair.thresholds.zscore_abs:
-            alerts.append(
-                self._make_alert(
-                    now,
-                    pair.group_name,
-                    "zscore",
-                    "warning",
-                    f"{pair.group_name} zscore reached {snapshot.zscore:.2f}",
-                    {"zscore": snapshot.zscore, "spread": snapshot.spread},
-                )
-            )
-
-        if snapshot.fx_rate is None:
-            alerts.append(
-                self._make_alert(
-                    now,
-                    pair.group_name,
-                    "fx",
-                    "critical",
-                    f"{pair.group_name} FX rate is unavailable",
-                    {},
-                )
-            )
-
-        return [alert for alert in alerts if alert is not None]
-
-    def _make_alert(
+    def ensure_overseas_history(
         self,
-        ts: datetime,
         group_name: str,
-        category: str,
-        severity: str,
-        message: str,
-        metadata: dict,
-    ) -> AlertEvent | None:
-        key = (group_name, category)
-        previous = self._cooldowns.get(key)
-        cooldown = next(
-            (
-                pair.thresholds.alert_cooldown_seconds
-                for pair in self.config.pairs
-                if pair.group_name == group_name
-            ),
-            300,
-        )
-        if previous and (ts - previous).total_seconds() < cooldown:
-            return None
+        *,
+        range_key: str,
+        start_ts: str | None,
+        end_ts: str | None,
+    ) -> None:
+        pair = self._pair_map[group_name]
+        self.history.ensure_overseas_history(pair, range_key=range_key, start_ts=start_ts, end_ts=end_ts)
 
-        self._cooldowns[key] = ts
-        return AlertEvent(
-            ts=ts,
-            group_name=group_name,
-            category=category,  # type: ignore[arg-type]
-            severity=severity,  # type: ignore[arg-type]
-            message=message,
-            metadata=metadata,
-        )
+    def _preload_cached_state(self) -> None:
+        latest_snapshots = self.repository.load_latest_snapshots()
+        if latest_snapshots:
+            self.context.latest_snapshots = {snapshot.group_name: snapshot for snapshot in latest_snapshots}
+            self.latest_snapshots = self.context.latest_snapshots
+            newest_snapshot = max(latest_snapshots, key=lambda item: item.ts)
+            self.context.last_poll_finished_at = newest_snapshot.ts
+            self.context.latest_fx_jump_pct = newest_snapshot.fx_jump_pct
+        runtime_state = self.repository.load_runtime_state("worker")
+        if runtime_state is not None:
+            self.context.total_cycles = runtime_state.total_cycles
+            self.context.last_poll_started_at = runtime_state.last_poll_started_at
+            self.context.last_poll_finished_at = runtime_state.last_poll_finished_at or self.context.last_poll_finished_at
+            self.context.latest_fx_jump_pct = runtime_state.latest_fx_jump_pct
+            self.context.latest_fx_is_live = runtime_state.fx_is_live
+            self.context.latest_fx_last_live_at = runtime_state.fx_last_live_at
+            self.context.latest_fx_frozen_since = runtime_state.fx_frozen_since
+        for persisted in self.repository.load_source_health_state():
+            if persisted.source_name in self.context.source_health:
+                self.context.source_health[persisted.source_name] = persisted
+        latest_fx_quote = self.repository.load_latest_fx_rate_any(self.fx_source_names())
+        if latest_fx_quote is not None:
+            self.context.latest_fx_quote = latest_fx_quote
+            if self.context.latest_fx_last_live_at is None:
+                self.context.latest_fx_last_live_at = latest_fx_quote.ts
 
-    async def _dispatch_alerts(self, alerts: list[AlertEvent]) -> None:
-        if not alerts or not self.notifiers:
-            return
+    def fx_source_names(self) -> list[str]:
+        ordered: list[str] = []
+        for source_name in [self.config.app.fx_source, *self.config.app.fx_backup_sources]:
+            if source_name and source_name in self.config.sources and source_name not in ordered:
+                ordered.append(source_name)
+        return ordered
 
-        deliveries = await asyncio.gather(
-            *(self._deliver_alert(alert) for alert in alerts),
-            return_exceptions=False,
-        )
-        for delivery_batch in deliveries:
-            for delivery in delivery_batch:
-                self.repository.insert_notification_delivery(delivery)
+    async def _maybe_backfill_tqsdk_shadow_history(self) -> None:
+        await self.history.maybe_backfill_tqsdk_shadow_history()
 
-    async def _deliver_alert(self, alert: AlertEvent) -> list[NotificationDelivery]:
-        deliveries: list[NotificationDelivery] = []
-        for notifier in self.notifiers:
-            if not notifier.should_send(alert.severity):
-                continue
-            try:
-                result = await asyncio.to_thread(notifier.send, alert)
-                deliveries.append(
-                    NotificationDelivery(
-                        ts=alert.ts,
-                        notifier_name=result.notifier_name,
-                        group_name=alert.group_name,
-                        category=alert.category,
-                        severity=alert.severity,
-                        success=result.success,
-                        response_message=result.response_message,
-                        payload=result.payload,
-                    )
-                )
-            except Exception as exc:
-                deliveries.append(
-                    NotificationDelivery(
-                        ts=alert.ts,
-                        notifier_name=getattr(notifier, "config", None).name if getattr(notifier, "config", None) else "unknown",
-                        group_name=alert.group_name,
-                        category=alert.category,
-                        severity=alert.severity,
-                        success=False,
-                        response_message=str(exc),
-                        payload={
-                            "group_name": alert.group_name,
-                            "category": alert.category,
-                            "severity": alert.severity,
-                            "message": alert.message,
-                        },
-                    )
-                )
-                LOGGER.warning("Notifier delivery failed: %s", exc)
-        return deliveries
+    def _start_tqsdk_shadow_collector(self) -> None:
+        self.history.start_tqsdk_shadow_collector()
 
-
-def _age_seconds(timestamp: datetime) -> float:
-    return max((utc_now() - timestamp.astimezone(UTC)).total_seconds(), 0.0)
-
-
-def _max_skew_seconds(domestic: MarketQuote | None, overseas: MarketQuote | None, fx: FXQuote | None) -> float | None:
-    timestamps = [
-        item.ts.astimezone(UTC)
-        for item in (domestic, overseas, fx)
-        if item is not None
-    ]
-    if len(timestamps) < 2:
-        return None
-    seconds = [ts.timestamp() for ts in timestamps]
-    return max(seconds) - min(seconds)
-
-
-class MonitorRuntime:
-    def __init__(self, service: MonitorService) -> None:
-        self.service = service
-        self.task: asyncio.Task | None = None
-
-    async def start(self) -> None:
-        if self.task is None:
-            self.task = asyncio.create_task(self.service.run_forever())
-
-    async def stop(self) -> None:
-        await self.service.shutdown()
-        if self.task is not None:
-            with suppress(asyncio.CancelledError):
-                await self.task
-            self.task = None
+    @staticmethod
+    def _resolve_timezone(name: str):
+        try:
+            return ZoneInfo(name)
+        except Exception:
+            return UTC

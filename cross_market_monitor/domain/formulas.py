@@ -57,11 +57,14 @@ def normalize_domestic_quote(
     )
 
 
-def compute_spread(overseas_price: float | None, normalized_domestic_price: float | None) -> tuple[float | None, float | None]:
-    if overseas_price is None or normalized_domestic_price is None or normalized_domestic_price == 0:
+def compute_spread(normalized_domestic_price: float | None, overseas_price: float | None) -> tuple[float | None, float | None]:
+    if overseas_price is None or normalized_domestic_price is None:
         return None, None
-    spread = overseas_price - normalized_domestic_price
-    return spread, spread / normalized_domestic_price
+    denominator = normalized_domestic_price + overseas_price
+    if denominator == 0:
+        return None, None
+    spread = normalized_domestic_price - overseas_price
+    return spread, spread * 2 / denominator
 
 
 def compute_executable_spreads(

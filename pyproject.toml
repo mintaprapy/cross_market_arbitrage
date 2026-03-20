@@ -11,6 +11,13 @@ dependencies = [
   "uvicorn>=0.30.0",
 ]
 
+[project.optional-dependencies]
+parquet = ["pyarrow>=18.0.0"]
+tqsdk = ["tqsdk>=3.9.0"]
+
+[project.scripts]
+cross-market-monitor = "cross_market_monitor.main:main"
+
 [build-system]
 requires = ["setuptools>=68.0"]
 build-backend = "setuptools.build_meta"

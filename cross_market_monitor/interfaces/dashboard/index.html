@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>跨市场价差监控平台 | __APP_TITLE__</title>
+    <link rel="stylesheet" href="/dashboard/styles.css">
+
+</head>
+<body>
+  <div class="shell">
+    <section class="hero">
+      <h1>跨市场价差监控平台</h1>
+      <p>统一国内外商品价格口径，实时监控理论价差、汇率异常暂停、数据源健康状态和历史回放研究指标。页面每 10 秒刷新一次。</p>
+      <div class="meta" id="meta"></div>
+    </section>
+
+    <section class="panel">
+      <div class="head">
+        <div class="title">
+          <strong>标的概览</strong>
+          <span>按当前监控口径汇总国内价格、国内换算价、海外最新价与理论价差</span>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table class="instrument-summary-table">
+          <thead>
+            <tr>
+              <th>标的</th>
+              <th class="numeric-cell">国内价格</th>
+              <th class="numeric-cell">国内换算价</th>
+              <th class="numeric-cell">海外最新价</th>
+              <th class="numeric-cell">海外卖出仓位</th>
+              <th class="numeric-cell">理论价差</th>
+              <th class="numeric-cell">价差百分比</th>
+            </tr>
+          </thead>
+          <tbody id="instrument-summary"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="grid" id="cards"></section>
+
+    <section class="panel">
+      <div class="head">
+        <div class="title">
+          <strong>回放研究</strong>
+          <span>对冲比、实现波动率与成本修正后的信号复盘</span>
+        </div>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>监控组</th>
+            <th>样本数</th>
+            <th>价差均值</th>
+            <th>对冲 Beta</th>
+            <th>日波动率</th>
+            <th>平均成本</th>
+            <th>净边际</th>
+            <th>触发次数</th>
+          </tr>
+        </thead>
+        <tbody id="replay"></tbody>
+      </table>
+    </section>
+
+    <section class="two-up">
+      <section class="panel">
+        <div class="head">
+          <div class="title">
+            <strong>数据源健康</strong>
+            <span>主源与备用源的可用状态</span>
+          </div>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>数据源</th>
+              <th>类型</th>
+              <th>成功</th>
+              <th>失败</th>
+              <th>最近成功</th>
+              <th>最近标的</th>
+              <th>延迟</th>
+              <th>最近错误</th>
+            </tr>
+          </thead>
+          <tbody id="sources"></tbody>
+        </table>
+      </section>
+
+      <section class="panel">
+        <div class="head">
+          <div class="title">
+            <strong>通知投递</strong>
+            <span>最近的告警通知发送结果</span>
+          </div>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>时间</th>
+              <th>通知器</th>
+              <th>监控组</th>
+              <th>级别</th>
+              <th>结果</th>
+              <th>消息</th>
+            </tr>
+          </thead>
+          <tbody id="deliveries"></tbody>
+        </table>
+      </section>
+    </section>
+
+    <section class="panel">
+      <div class="head">
+        <div class="title">
+          <strong>最近告警</strong>
+          <span>最新告警流与数据质量提示</span>
+        </div>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>时间</th>
+            <th>监控组</th>
+            <th>类别</th>
+            <th>级别</th>
+            <th>消息</th>
+          </tr>
+        </thead>
+        <tbody id="alerts"></tbody>
+      </table>
+    </section>
+  </div>
+    <script src="/dashboard/app.js"></script>
+</body>
+</html>

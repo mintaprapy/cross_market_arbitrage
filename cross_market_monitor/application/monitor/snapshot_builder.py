@@ -217,10 +217,20 @@ class SnapshotBuilder:
             return domestic_quote, domestic_quotes
 
         now_local = utc_now().astimezone(self.context.local_tz)
-        if is_within_trading_sessions(now_local, pair.trading_sessions_local):
+        if is_within_trading_sessions(
+            now_local,
+            pair.trading_sessions_local,
+            non_trading_dates=self.context.config.app.domestic_non_trading_dates_local,
+            weekends_closed=self.context.config.app.domestic_weekends_closed,
+        ):
             return domestic_quote, domestic_quotes
 
-        session_end_local = latest_session_end_before(now_local, pair.trading_sessions_local)
+        session_end_local = latest_session_end_before(
+            now_local,
+            pair.trading_sessions_local,
+            non_trading_dates=self.context.config.app.domestic_non_trading_dates_local,
+            weekends_closed=self.context.config.app.domestic_weekends_closed,
+        )
         if session_end_local is None:
             return domestic_quote, domestic_quotes
 

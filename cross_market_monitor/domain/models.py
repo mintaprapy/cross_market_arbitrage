@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
@@ -92,6 +92,9 @@ class SourceConfig(BaseModel):
 class AppConfig(BaseModel):
     name: str = "Cross Market Spread Monitor"
     timezone: str = "Asia/Shanghai"
+    domestic_trading_calendar_path: str | None = None
+    domestic_weekends_closed: bool = True
+    domestic_non_trading_dates_local: list[date] = Field(default_factory=list)
     poll_interval_sec: int = 10
     fx_poll_interval_sec: int = 3600
     history_limit: int = 1000
@@ -105,6 +108,8 @@ class AppConfig(BaseModel):
     export_dir: str = "exports"
     fx_window_size: int = 60
     replay_target_daily_vol_pct: float = 0.015
+    startup_history_backfill_enabled: bool = True
+    startup_history_backfill_range_key: Literal["24h", "7d", "30d", "90d", "1y", "all"] = "30d"
     tqsdk_shadow_source: str | None = None
     tqsdk_shadow_enabled: bool = False
     tqsdk_shadow_poll_interval_sec: int = 10

@@ -97,6 +97,12 @@ class QueryService:
         payload = snapshot.model_dump(mode="json")
         pair = self.context.pair_map.get(snapshot.group_name)
         payload["hedge_contract_size"] = pair.hedge_contract_size if pair is not None else None
+        payload["trading_sessions_local"] = list(pair.trading_sessions_local) if pair is not None else []
+        payload["domestic_weekends_closed"] = self.context.config.app.domestic_weekends_closed
+        payload["domestic_non_trading_dates_local"] = [
+            item.isoformat()
+            for item in self.context.config.app.domestic_non_trading_dates_local
+        ]
         return payload
 
     def get_health(self) -> dict:

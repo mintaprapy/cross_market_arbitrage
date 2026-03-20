@@ -1091,6 +1091,89 @@
       return rows.filter((row) => row.domestic_symbol === selectedDomesticSymbol);
     }
 
+    function parseSessionClock(text) {
+      if (!text || !text.includes(":")) return null;
+      const [hourText, minuteText] = text.split(":", 2);
+      const hour = Number(hourText);
+      const minute = Number(minuteText);
+      if (!Number.isInteger(hour) || !Number.isInteger(minute)) return null;
+      if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return null;
+      return { hour, minute };
+    }
+
+    function localDateKey(date) {
+      return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+    }
+
+    function shiftLocalDate(date, days) {
+      const shifted = new Date(date.getTime());
+      shifted.setDate(shifted.getDate() + days);
+      return shifted;
+    }
+
+    function isTradingDayLocal(date, nonTradingDateSet, weekendsClosed) {
+      if (weekendsClosed && (date.getDay() === 0 || date.getDay() === 6)) {
+        return false;
+      }
+      return !nonTradingDateSet.has(localDateKey(date));
+    }
+
+    function isTimestampWithinTradingSessions(timestamp, sessions, options = {}) {
+      if (!timestamp || !sessions || !sessions.length) {
+        return true;
+      }
+      const date = new Date(timestamp);
+      if (Number.isNaN(date.getTime())) {
+        return true;
+      }
+      const weekendsClosed = options.weekendsClosed !== false;
+      const nonTradingDateSet = new Set(options.nonTradingDates || []);
+      const minutes = date.getHours() * 60 + date.getMinutes();
+      const currentDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+      return sessions.some((session) => {
+        if (!session || !session.includes("-")) return false;
+        const [startText, endText] = session.split("-", 2);
+        const start = parseSessionClock(startText);
+        const end = parseSessionClock(endText);
+        if (!start || !end) return false;
+        const startMinutes = start.hour * 60 + start.minute;
+        const endMinutes = end.hour * 60 + end.minute;
+        if (endMinutes <= startMinutes) {
+          const inSession = minutes >= startMinutes || minutes <= endMinutes;
+          if (!inSession) return false;
+          const anchorDate = minutes >= startMinutes ? currentDate : shiftLocalDate(currentDate, -1);
+          const nextTradingDate = shiftLocalDate(anchorDate, 1);
+          return (
+            isTradingDayLocal(anchorDate, nonTradingDateSet, weekendsClosed)
+            && isTradingDayLocal(nextTradingDate, nonTradingDateSet, weekendsClosed)
+          );
+        }
+        return (
+          minutes >= startMinutes
+          && minutes <= endMinutes
+          && isTradingDayLocal(currentDate, nonTradingDateSet, weekendsClosed)
+        );
+      });
+    }
+
+    function filterHistoryForTradingSessions(history, item) {
+      const rows = history || [];
+      const sessions = item?.trading_sessions_local || [];
+      if (!sessions.length) {
+        return rows;
+      }
+      const weekendsClosed = item?.domestic_weekends_closed !== false;
+      const nonTradingDates = item?.domestic_non_trading_dates_local || [];
+      return rows.filter((row) => isTimestampWithinTradingSessions(
+        timelineTimestamp(row),
+        sessions,
+        {
+          weekendsClosed,
+          nonTradingDates,
+        },
+      ));
+    }
+
     function timelineTimestamp(row) {
       return row?.ts_local || row?.ts || row?.ts_utc || null;
     }
@@ -1117,7 +1200,8 @@
 
     function buildCard(cardGroup, domesticPreference, overseasPreference, history) {
       const item = cardGroup.selected_item;
-      const filteredHistory = filterHistoryForSelection(history || [], domesticPreference);
+      const selectedHistory = filterHistoryForSelection(history || [], domesticPreference);
+      const filteredHistory = filterHistoryForTradingSessions(selectedHistory, item);
       const cardKey = cardGroup.card_key;
       const groupName = item.group_name;
       const timeline = filteredHistory.map((row) => timelineTimestamp(row));

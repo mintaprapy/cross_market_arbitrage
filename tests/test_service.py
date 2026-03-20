@@ -95,6 +95,51 @@ class StaticFxAdapter:
         )
 
 
+class HistoryCapableFxAdapter:
+    def __init__(self, source_name: str = "fx_history", rate: float = 7.0) -> None:
+        self.source_name = source_name
+        self.rate = rate
+
+    def fetch_rate(self, base: str, quote: str) -> FXQuote:
+        return FXQuote(
+            source_name=self.source_name,
+            pair=f"{base}/{quote}",
+            ts=datetime.now(UTC),
+            rate=self.rate,
+            raw_payload="fx-history-live",
+        )
+
+    def fetch_history(
+        self,
+        base: str,
+        quote: str,
+        *,
+        start_ts: datetime | None = None,
+        end_ts: datetime | None = None,
+    ) -> list[FXQuote]:
+        rows = [
+            FXQuote(
+                source_name=self.source_name,
+                pair=f"{base}/{quote}",
+                ts=datetime(2026, 3, 12, 0, 0, tzinfo=UTC),
+                rate=6.95,
+                raw_payload="fx-hist-1",
+            ),
+            FXQuote(
+                source_name=self.source_name,
+                pair=f"{base}/{quote}",
+                ts=datetime(2026, 3, 13, 0, 0, tzinfo=UTC),
+                rate=6.96,
+                raw_payload="fx-hist-2",
+            ),
+        ]
+        return [
+            row
+            for row in rows
+            if (start_ts is None or row.ts >= start_ts) and (end_ts is None or row.ts <= end_ts)
+        ]
+
+
 class CountingFxAdapter:
     def __init__(self, source_name: str, rate: float) -> None:
         self.source_name = source_name
@@ -313,6 +358,55 @@ class MonitorServiceTests(unittest.TestCase):
             self.assertEqual(len(payload["snapshots"]), 1)
             self.assertEqual(payload["snapshots"][0]["group_name"], "AU_XAU_TEST")
             self.assertEqual(payload["snapshots"][0]["hedge_contract_size"], 32.1507)
+
+    def test_card_view_exposes_trading_sessions_for_chart_filtering(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repository = SQLiteRepository(f"{tmp_dir}/monitor.db")
+            config = MonitorConfig.model_validate(
+                {
+                    "app": {
+                        "name": "test",
+                        "fx_source": "fx",
+                        "domestic_weekends_closed": True,
+                        "domestic_non_trading_dates_local": ["2026-09-25"],
+                        "sqlite_path": f"{tmp_dir}/monitor.db",
+                    },
+                    "sources": {
+                        "domestic": {"kind": "mock_quote", "base_url": "http://local"},
+                        "overseas": {"kind": "mock_quote", "base_url": "http://local"},
+                        "fx": {"kind": "mock_fx", "base_url": "http://local"},
+                    },
+                    "pairs": [
+                        {
+                            "group_name": "AU_XAU_TEST",
+                            "domestic_source": "domestic",
+                            "domestic_symbol": "nf_AU0",
+                            "domestic_label": "AU Main",
+                            "overseas_source": "overseas",
+                            "overseas_symbol": "XAUUSDT",
+                            "overseas_label": "Binance XAU",
+                            "formula": "gold",
+                            "domestic_unit": "CNY_PER_GRAM",
+                            "target_unit": "USD_PER_OUNCE",
+                            "trading_sessions_local": ["09:00-10:15", "10:30-11:30", "13:30-15:00"],
+                        }
+                    ],
+                }
+            )
+
+            service = MonitorService(config, repository)
+            asyncio.run(service.poll_once())
+
+            payload = service.get_card_view("AU_XAU_TEST", range_key="24h")
+            self.assertEqual(
+                payload["card_group"]["selected_item"]["trading_sessions_local"],
+                ["09:00-10:15", "10:30-11:30", "13:30-15:00"],
+            )
+            self.assertTrue(payload["card_group"]["selected_item"]["domestic_weekends_closed"])
+            self.assertEqual(
+                payload["card_group"]["selected_item"]["domestic_non_trading_dates_local"],
+                ["2026-09-25"],
+            )
 
     def test_snapshot_reads_latest_rows_from_repository_when_service_is_not_polling(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -1463,6 +1557,161 @@ class MonitorServiceTests(unittest.TestCase):
             self.assertEqual(snapshot.fx_rate, 7.0)
             self.assertEqual(snapshot.route_detail["effective_fx_ts"], (close_ts - timedelta(minutes=5)).isoformat())
 
+    def test_freezes_domestic_price_and_fx_during_weekend_gap(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repository = SQLiteRepository(f"{tmp_dir}/monitor.db")
+            config = MonitorConfig.model_validate(
+                {
+                    "app": {
+                        "name": "test",
+                        "timezone": "Asia/Shanghai",
+                        "fx_source": "fx",
+                        "domestic_weekends_closed": True,
+                        "sqlite_path": f"{tmp_dir}/monitor.db",
+                    },
+                    "sources": {
+                        "domestic": {"kind": "mock_quote", "base_url": "http://local"},
+                        "overseas": {"kind": "mock_quote", "base_url": "http://local"},
+                        "fx": {"kind": "mock_fx", "base_url": "http://local"},
+                    },
+                    "pairs": [
+                        {
+                            "group_name": "AU_XAU_TEST",
+                            "domestic_source": "domestic",
+                            "domestic_symbol": "nf_AU0",
+                            "domestic_label": "AU Main",
+                            "overseas_source": "overseas",
+                            "overseas_symbol": "XAU",
+                            "overseas_label": "XAU",
+                            "formula": "gold",
+                            "domestic_unit": "CNY_PER_GRAM",
+                            "target_unit": "USD_PER_OUNCE",
+                            "thresholds": {
+                                "stale_seconds": 7200,
+                                "max_skew_seconds": 7200,
+                            },
+                            "trading_sessions_local": ["09:00-10:00", "13:30-15:00", "21:00-02:30"],
+                        }
+                    ],
+                }
+            )
+            close_ts = datetime(2026, 3, 20, 7, 0, tzinfo=UTC)
+            now_ts = datetime(2026, 3, 20, 16, 30, tzinfo=UTC)
+            repository.insert_raw_quote(
+                "AU_XAU_TEST",
+                "domestic",
+                MarketQuote(
+                    source_name="domestic",
+                    symbol="nf_AU0",
+                    label="AU Main",
+                    ts=close_ts,
+                    last=100.0,
+                    bid=99.9,
+                    ask=100.1,
+                    raw_payload="friday-close",
+                ),
+            )
+            repository.insert_fx_rate(
+                FXQuote(
+                    source_name="fx",
+                    pair="USD/CNY",
+                    ts=close_ts - timedelta(minutes=5),
+                    rate=7.0,
+                    raw_payload="friday-close-fx",
+                )
+            )
+
+            service = MonitorService(config, repository)
+            service.adapters["domestic"] = FixedTimestampQuoteAdapter("domestic", now_ts, 101.0, 100.9, 101.1)
+            service.adapters["overseas"] = StaticQuoteAdapter("overseas", 5100.0, 5099.0, 5101.0)
+            service.adapters["fx"] = StaticFxAdapter("fx", 7.2)
+
+            with mock.patch("cross_market_monitor.application.common.utc_now", return_value=now_ts):
+                with mock.patch("cross_market_monitor.application.monitor.snapshot_builder.utc_now", return_value=now_ts):
+                    asyncio.run(service.poll_once())
+
+            snapshot = service.latest_snapshots["AU_XAU_TEST"]
+            self.assertEqual(snapshot.domestic_last_raw, 100.0)
+            self.assertEqual(snapshot.fx_rate, 7.0)
+
+    def test_freezes_domestic_price_and_fx_during_holiday_gap(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repository = SQLiteRepository(f"{tmp_dir}/monitor.db")
+            config = MonitorConfig.model_validate(
+                {
+                    "app": {
+                        "name": "test",
+                        "timezone": "Asia/Shanghai",
+                        "fx_source": "fx",
+                        "domestic_weekends_closed": True,
+                        "domestic_non_trading_dates_local": ["2026-09-25"],
+                        "sqlite_path": f"{tmp_dir}/monitor.db",
+                    },
+                    "sources": {
+                        "domestic": {"kind": "mock_quote", "base_url": "http://local"},
+                        "overseas": {"kind": "mock_quote", "base_url": "http://local"},
+                        "fx": {"kind": "mock_fx", "base_url": "http://local"},
+                    },
+                    "pairs": [
+                        {
+                            "group_name": "AU_XAU_TEST",
+                            "domestic_source": "domestic",
+                            "domestic_symbol": "nf_AU0",
+                            "domestic_label": "AU Main",
+                            "overseas_source": "overseas",
+                            "overseas_symbol": "XAU",
+                            "overseas_label": "XAU",
+                            "formula": "gold",
+                            "domestic_unit": "CNY_PER_GRAM",
+                            "target_unit": "USD_PER_OUNCE",
+                            "thresholds": {
+                                "stale_seconds": 7200,
+                                "max_skew_seconds": 7200,
+                            },
+                            "trading_sessions_local": ["09:00-10:00", "13:30-15:00", "21:00-02:30"],
+                        }
+                    ],
+                }
+            )
+            close_ts = datetime(2026, 9, 24, 7, 0, tzinfo=UTC)
+            now_ts = datetime(2026, 9, 24, 13, 30, tzinfo=UTC)
+            repository.insert_raw_quote(
+                "AU_XAU_TEST",
+                "domestic",
+                MarketQuote(
+                    source_name="domestic",
+                    symbol="nf_AU0",
+                    label="AU Main",
+                    ts=close_ts,
+                    last=100.0,
+                    bid=99.9,
+                    ask=100.1,
+                    raw_payload="pre-holiday-close",
+                ),
+            )
+            repository.insert_fx_rate(
+                FXQuote(
+                    source_name="fx",
+                    pair="USD/CNY",
+                    ts=close_ts - timedelta(minutes=5),
+                    rate=7.0,
+                    raw_payload="pre-holiday-fx",
+                )
+            )
+
+            service = MonitorService(config, repository)
+            service.adapters["domestic"] = FixedTimestampQuoteAdapter("domestic", now_ts, 101.0, 100.9, 101.1)
+            service.adapters["overseas"] = StaticQuoteAdapter("overseas", 5100.0, 5099.0, 5101.0)
+            service.adapters["fx"] = StaticFxAdapter("fx", 7.2)
+
+            with mock.patch("cross_market_monitor.application.common.utc_now", return_value=now_ts):
+                with mock.patch("cross_market_monitor.application.monitor.snapshot_builder.utc_now", return_value=now_ts):
+                    asyncio.run(service.poll_once())
+
+            snapshot = service.latest_snapshots["AU_XAU_TEST"]
+            self.assertEqual(snapshot.domestic_last_raw, 100.0)
+            self.assertEqual(snapshot.fx_rate, 7.0)
+
     def test_freezes_fx_to_domestic_timestamp_when_domestic_quote_is_stale(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             repository = SQLiteRepository(f"{tmp_dir}/monitor.db")
@@ -1670,6 +1919,7 @@ class MonitorServiceTests(unittest.TestCase):
                         "name": "test",
                         "fx_source": "fx",
                         "sqlite_path": f"{tmp_dir}/monitor.db",
+                        "startup_history_backfill_enabled": False,
                         "tqsdk_shadow_source": "tqsdk_domestic",
                         "tqsdk_shadow_enabled": True,
                         "tqsdk_startup_backfill_enabled": True,
@@ -1701,7 +1951,7 @@ class MonitorServiceTests(unittest.TestCase):
             )
             service = MonitorService(config, repository)
             service.adapters["tqsdk_domestic"] = FakeTqSdkAdapter()
-            service._start_tqsdk_shadow_collector = lambda: None  # type: ignore[method-assign]
+            service.history.start_tqsdk_shadow_collector = lambda: None  # type: ignore[method-assign]
 
             asyncio.run(service.startup())
 
@@ -1711,6 +1961,173 @@ class MonitorServiceTests(unittest.TestCase):
             self.assertEqual(len(shadow_rows), 2)
             self.assertEqual(domestic_options["selected_symbol"], "nf_AU0")
             self.assertEqual([item["symbol"] for item in domestic_options["options"]], ["nf_AU0"])
+
+    def test_startup_backfills_main_history_for_chart_view(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repository = SQLiteRepository(f"{tmp_dir}/monitor.db")
+            config = MonitorConfig.model_validate(
+                {
+                    "app": {
+                        "name": "test",
+                        "fx_source": "fx_history",
+                        "sqlite_path": f"{tmp_dir}/monitor.db",
+                        "startup_history_backfill_enabled": True,
+                        "startup_history_backfill_range_key": "30d",
+                    },
+                    "sources": {
+                        "domestic": {"kind": "mock_quote", "base_url": "http://local"},
+                        "tqsdk_domestic": {"kind": "tqsdk_main", "base_url": "wss://example.invalid"},
+                        "overseas": {"kind": "binance_futures", "base_url": "http://local"},
+                        "fx_history": {"kind": "mock_fx", "base_url": "http://local"},
+                    },
+                    "pairs": [
+                        {
+                            "group_name": "AU_XAU",
+                            "domestic_source": "domestic",
+                            "domestic_symbol": "nf_AU0",
+                            "domestic_label": "AU Main",
+                            "domestic_history_source": "tqsdk_domestic",
+                            "domestic_product_code": "au",
+                            "overseas_source": "overseas",
+                            "overseas_symbol": "XAUUSDT",
+                            "overseas_label": "Binance XAU",
+                            "formula": "gold",
+                            "domestic_unit": "CNY_PER_GRAM",
+                            "target_unit": "USD_PER_OUNCE",
+                        }
+                    ],
+                }
+            )
+            service = MonitorService(config, repository)
+            service.adapters["tqsdk_domestic"] = FakeTqSdkAdapter()
+            service.adapters["overseas"] = HistoryCapableOverseasAdapter("overseas")
+            service.adapters["fx_history"] = HistoryCapableFxAdapter("fx_history", 6.95)
+
+            asyncio.run(service.startup())
+
+            domestic_rows = repository.fetch_raw_quote_history("AU_XAU", "domestic", symbol="KQ.m@SHFE.au", limit=10)
+            overseas_rows = repository.fetch_raw_quote_history("AU_XAU", "overseas", symbol="XAUUSDT", limit=10)
+            normalized_rows = repository.fetch_normalized_domestic_history("AU_XAU", symbol="nf_AU0", limit=10)
+            history = service.get_history("AU_XAU", limit=50, range_key="30d")
+
+            self.assertEqual(len(domestic_rows), 2)
+            self.assertEqual(len(overseas_rows), 2)
+            self.assertEqual(len(normalized_rows), 2)
+            self.assertTrue(history)
+            self.assertEqual(history[0]["domestic_symbol"], "nf_AU0")
+            self.assertLess(history[0]["ts"], "2026-03-19T14:09:00+00:00")
+
+    def test_normalized_history_backfill_merges_tqsdk_and_live_domestic_symbols(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repository = SQLiteRepository(f"{tmp_dir}/monitor.db")
+            config = MonitorConfig.model_validate(
+                {
+                    "app": {
+                        "name": "test",
+                        "fx_source": "fx",
+                        "sqlite_path": f"{tmp_dir}/monitor.db",
+                    },
+                    "sources": {
+                        "domestic": {"kind": "mock_quote", "base_url": "http://local"},
+                        "tqsdk_domestic": {"kind": "tqsdk_main", "base_url": "wss://example.invalid"},
+                        "overseas": {"kind": "mock_quote", "base_url": "http://local"},
+                        "fx": {"kind": "mock_fx", "base_url": "http://local"},
+                    },
+                    "pairs": [
+                        {
+                            "group_name": "AU_XAU",
+                            "domestic_source": "domestic",
+                            "domestic_symbol": "nf_AU0",
+                            "domestic_label": "AU Main",
+                            "domestic_history_source": "tqsdk_domestic",
+                            "domestic_product_code": "au",
+                            "overseas_source": "overseas",
+                            "overseas_symbol": "XAUUSDT",
+                            "overseas_label": "Binance XAU",
+                            "formula": "gold",
+                            "domestic_unit": "CNY_PER_GRAM",
+                            "target_unit": "USD_PER_OUNCE",
+                        }
+                    ],
+                }
+            )
+            service = MonitorService(config, repository)
+            older_domestic_ts = datetime(2026, 3, 12, 1, 0, tzinfo=UTC)
+            newer_domestic_ts = datetime(2026, 3, 19, 14, 9, 40, tzinfo=UTC)
+            for quote in [
+                MarketQuote(
+                    source_name="tqsdk_domestic",
+                    symbol="KQ.m@SHFE.au",
+                    label="TqSdk AU",
+                    ts=older_domestic_ts,
+                    last=1000.0,
+                    bid=None,
+                    ask=None,
+                    raw_payload="old",
+                ),
+                MarketQuote(
+                    source_name="sina_domestic",
+                    symbol="nf_AU0",
+                    label="AU Main",
+                    ts=newer_domestic_ts,
+                    last=1030.0,
+                    bid=None,
+                    ask=None,
+                    raw_payload="new",
+                ),
+            ]:
+                repository.insert_raw_quote("AU_XAU", "domestic", quote)
+            for quote in [
+                MarketQuote(
+                    source_name="overseas",
+                    symbol="XAUUSDT",
+                    label="Binance XAU",
+                    ts=datetime(2026, 3, 12, 1, 0, tzinfo=UTC),
+                    last=82.1,
+                    bid=None,
+                    ask=None,
+                    raw_payload="ovs-old",
+                ),
+                MarketQuote(
+                    source_name="overseas",
+                    symbol="XAUUSDT",
+                    label="Binance XAU",
+                    ts=datetime(2026, 3, 19, 14, 10, tzinfo=UTC),
+                    last=84.2,
+                    bid=None,
+                    ask=None,
+                    raw_payload="ovs-new",
+                ),
+            ]:
+                repository.insert_raw_quote("AU_XAU", "overseas", quote)
+            for quote in [
+                FXQuote(
+                    source_name="fx",
+                    pair="USD/CNY",
+                    ts=datetime(2026, 3, 12, 0, 0, tzinfo=UTC),
+                    rate=6.95,
+                    raw_payload="fx-old",
+                ),
+                FXQuote(
+                    source_name="fx",
+                    pair="USD/CNY",
+                    ts=datetime(2026, 3, 19, 14, 0, tzinfo=UTC),
+                    rate=6.90,
+                    raw_payload="fx-new",
+                ),
+            ]:
+                repository.insert_fx_rate(quote)
+
+            report = service.history.backfill_normalized_domestic_history("AU_XAU", range_key="30d")
+            normalized_rows = repository.fetch_normalized_domestic_history("AU_XAU", symbol="nf_AU0", limit=10)
+            history = service.get_history("AU_XAU", limit=50, range_key="30d")
+
+            self.assertTrue(report["supported"])
+            self.assertEqual(report["inserted_rows"], 2)
+            self.assertEqual(len(normalized_rows), 2)
+            self.assertEqual(normalized_rows[0]["ts"], older_domestic_ts.isoformat())
+            self.assertEqual(history[0]["domestic_symbol"], "nf_AU0")
+            self.assertEqual(history[0]["ts"], older_domestic_ts.isoformat())
 
     def test_builds_shadow_comparison_summary(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -2432,6 +2849,60 @@ class MonitorServiceTests(unittest.TestCase):
             self.assertEqual(supported_report["fetched_rows"], 2)
             self.assertEqual(len(gross_rows), 2)
             self.assertEqual(len(net_rows), 2)
+
+    def test_backfills_domestic_history_does_not_fall_back_when_dedicated_source_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repository = SQLiteRepository(f"{tmp_dir}/monitor.db")
+            config = MonitorConfig.model_validate(
+                {
+                    "app": {
+                        "name": "test",
+                        "fx_source": "fx",
+                        "sqlite_path": f"{tmp_dir}/monitor.db",
+                    },
+                    "sources": {
+                        "sina_domestic": {"kind": "sina_futures", "base_url": "https://hq.sinajs.cn"},
+                        "tqsdk_domestic": {"kind": "tqsdk_main", "base_url": "wss://free-api.shinnytech.com/t/nfmd/front/mobile"},
+                        "overseas": {"kind": "binance_futures", "base_url": "http://local"},
+                        "fx": {"kind": "mock_fx", "base_url": "http://local"},
+                    },
+                    "pairs": [
+                        {
+                            "group_name": "AG_XAG_GROSS",
+                            "domestic_source": "sina_domestic",
+                            "domestic_symbol": "nf_AG0",
+                            "domestic_label": "AG Main",
+                            "domestic_history_source": "tqsdk_domestic",
+                            "domestic_product_code": "ag",
+                            "domestic_candidates": [
+                                {"source": "sina_domestic", "symbol": "nf_AG0", "label": "AG Main"},
+                            ],
+                            "overseas_source": "overseas",
+                            "overseas_symbol": "XAGUSDT",
+                            "overseas_label": "Binance XAG",
+                            "formula": "silver",
+                            "domestic_unit": "CNY_PER_KG",
+                            "target_unit": "USD_PER_OUNCE",
+                            "tax_mode": "gross",
+                        }
+                    ],
+                }
+            )
+            service = MonitorService(config, repository)
+            service.adapters["tqsdk_domestic"] = FakeTqSdkAdapter()
+            original_fetch_history = service.adapters["tqsdk_domestic"].fetch_history
+            service.adapters["tqsdk_domestic"].fetch_history = mock.Mock(side_effect=RuntimeError("tqsdk unavailable"))  # type: ignore[method-assign]
+            service.adapters["sina_domestic"] = HistoryCapableDomesticAdapter()
+
+            report = service.backfill_domestic_history("AG_XAG_GROSS", range_key="all")
+            rows = repository.fetch_raw_quote_history("AG_XAG_GROSS", "domestic", symbol="nf_AG0", limit=10)
+
+            self.assertFalse(report["supported"])
+            self.assertEqual(report["domestic_source"], "tqsdk_domestic")
+            self.assertEqual(report["domestic_symbol"], "KQ.m@SHFE.ag")
+            self.assertIn("tqsdk unavailable", report["reason"])
+            self.assertEqual(len(rows), 0)
+            service.adapters["tqsdk_domestic"].fetch_history = original_fetch_history  # type: ignore[method-assign]
 
     def test_backfills_overseas_history_only_when_selected_source_supports_history(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

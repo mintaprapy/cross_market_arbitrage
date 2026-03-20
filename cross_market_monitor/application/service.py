@@ -209,11 +209,7 @@ class MonitorService:
         await self.runtime.run_forever()
 
     async def startup(self) -> None:
-        if self.context.startup_completed:
-            return
-        await self._maybe_backfill_tqsdk_shadow_history()
-        self._start_tqsdk_shadow_collector()
-        self.context.startup_completed = True
+        await self.runtime.startup()
 
     async def shutdown(self) -> None:
         await self.runtime.shutdown()

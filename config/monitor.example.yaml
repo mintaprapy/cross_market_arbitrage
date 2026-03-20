@@ -1,6 +1,7 @@
 app:
   name: Cross Market Commodity Monitor
   timezone: Asia/Shanghai
+  domestic_trading_calendar_path: domestic_trading_calendar.cn_futures.2026.yaml
   poll_interval_sec: 10
   fx_poll_interval_sec: 3600
   history_limit: 1000
@@ -14,6 +15,8 @@ app:
   export_dir: exports
   fx_window_size: 60
   replay_target_daily_vol_pct: 0.015
+  startup_history_backfill_enabled: true
+  startup_history_backfill_range_key: 30d
   tqsdk_shadow_source: null
   tqsdk_shadow_enabled: false
   tqsdk_shadow_poll_interval_sec: 10

@@ -46,6 +46,8 @@ python -m pip install -e ".[tqsdk,parquet]"
 python -m pip install -e .
 ```
 
+`config/monitor.yaml` 默认会引用仓库内的 [domestic_trading_calendar.cn_futures.2026.yaml](/Users/m2/Desktop/Codex2026/cross_market_arbitrage/config/domestic_trading_calendar.cn_futures.2026.yaml)；如果跨年部署，记得同步更新这份交易日历文件。
+
 ## 3. 配置 TqSdk 认证
 
 ```bash

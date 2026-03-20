@@ -2,6 +2,99 @@
 
 将国内商品期货价格统一换算成国际口径，实时监控跨市场价差、FX 风险暂停和历史研究指标。
 
+## 运行诊断导出
+
+项目内置运行诊断导出脚本 [export_runtime_diagnostics.py](/Users/m2/Desktop/Codex2026/cross_market_arbitrage/scripts/export_runtime_diagnostics.py)，用于一次性打包当前配置、数据库快照、API 健康信息、服务日志和环境信息，输出到项目目录下的 [exports](/Users/m2/Desktop/Codex2026/cross_market_arbitrage/exports)。
+
+常用命令：
+
+```bash
+python3 scripts/export_runtime_diagnostics.py --hours 12
+```
+
+脚本执行完成后会生成两份产物：
+
+- `exports/runtime_diagnostics_YYYYMMDD_HHMMSS/`
+- `exports/runtime_diagnostics_YYYYMMDD_HHMMSS.tar.gz`
+
+如果在 Ubuntu + systemd 环境执行，会额外采集：
+
+- `cross-market-monitor-worker` / `cross-market-monitor-api` 的 `systemctl` 输出
+- 对应 `journalctl` 日志
+- `nginx` 与 `systemd-resolved` 的状态和最近日志
+
+## 正式上线执行命令
+
+以下命令按 Ubuntu 服务器首次上线顺序执行，默认项目目录为 `/srv/cross_market_arbitrage`：
+
+1. 安装系统依赖
+
+```bash
+sudo apt-get update
+sudo apt-get install -y python3 python3-venv python3-pip nginx
+```
+
+2. 准备代码和本地配置
+
+```bash
+cd /srv
+git clone <你的仓库地址> cross_market_arbitrage
+cd /srv/cross_market_arbitrage
+cp config/monitor.example.yaml config/monitor.yaml
+sudo cp deploy/systemd/cross-market-monitor.env.example /etc/default/cross-market-monitor
+sudo chmod 600 /etc/default/cross-market-monitor
+sudo editor /etc/default/cross-market-monitor
+```
+
+需要在 `/etc/default/cross-market-monitor` 里至少确认：
+
+- `TQSDK_USER`
+- `TQSDK_PASSWORD`
+- `TQSDK_MD_URL`（如需要）
+
+3. 检查本地配置
+
+```bash
+editor config/monitor.yaml
+```
+
+至少确认这些字段：
+
+- `app.sqlite_path`
+- `app.export_dir`
+- `app.domestic_trading_calendar_path`
+- `notifiers`
+
+4. 执行安装脚本
+
+```bash
+sudo ./deploy/bin/install-ubuntu.sh
+```
+
+5. 执行上线后自检
+
+```bash
+sudo ./deploy/bin/post-deploy-check.sh
+```
+
+6. 查看服务状态和日志
+
+```bash
+sudo systemctl status cross-market-monitor-worker --no-pager
+sudo systemctl status cross-market-monitor-api --no-pager
+sudo journalctl -u cross-market-monitor-worker -n 100 --no-pager
+sudo journalctl -u cross-market-monitor-api -n 100 --no-pager
+```
+
+7. 验证页面和接口
+
+```bash
+curl -fsS http://127.0.0.1:6080/api/health | python3 -m json.tool
+curl -fsS http://127.0.0.1:6080/api/snapshot | python3 -m json.tool | head
+```
+
+如果服务器装了 `nginx`，`install-ubuntu.sh` 会一并渲染并加载站点配置；如需正式域名，部署前把 `SERVER_NAME` 环境变量传给脚本，或修改 [cross-market-monitor.conf](/Users/m2/Desktop/Codex2026/cross_market_arbitrage/deploy/nginx/cross-market-monitor.conf)。
+
 ## 当前覆盖
 
 - 黄金：`AU_XAU`
@@ -50,6 +143,7 @@ cross_market_monitor/
 ├── interfaces/
 │   ├── api/         # FastAPI 路由
 │   └── dashboard/   # HTML / CSS / JS
+├── scripts/         # 运维辅助脚本
 └── main.py          # CLI / worker / api 入口
 ```
 
@@ -58,6 +152,7 @@ cross_market_monitor/
 仓库跟踪的是公开示例配置：
 
 - [config/monitor.example.yaml](/Users/m2/Desktop/Codex2026/cross_market_arbitrage/config/monitor.example.yaml)
+- [config/domestic_trading_calendar.cn_futures.2026.yaml](/Users/m2/Desktop/Codex2026/cross_market_arbitrage/config/domestic_trading_calendar.cn_futures.2026.yaml)
 
 本地实际运行使用：
 
@@ -74,6 +169,7 @@ cp config/monitor.example.yaml config/monitor.yaml
 配置里已经包含：
 
 - 主国内链路配置和海外候选 `overseas_candidates`
+- 国内周末/节假日休市日历，通过 `domestic_trading_calendar_path` 引用
 - `domestic_product_code`，用于映射 TqSdk 主连代码
 - FX 跳变阈值与暂停开关
 - 每个交易对单独的通知阈值：
@@ -270,6 +366,7 @@ cp config/monitor.example.yaml config/monitor.yaml
 - 再检查本地 [config/monitor.yaml](/Users/m2/Desktop/Codex2026/cross_market_arbitrage/config/monitor.yaml) 中的：
   - `sqlite_path`
   - `export_dir`
+  - `domestic_trading_calendar_path`
   - `notifiers`
   - 每个交易对的 `spread_alert_above / spread_alert_below`
 - 如果线上启用 `TqSdk`，确认 `/etc/default/cross-market-monitor` 里已填：
@@ -428,6 +525,12 @@ python3 -m cross_market_monitor.main export-csv --dataset snapshots --group-name
 
 ```bash
 python3 -m cross_market_monitor.main export-parquet --dataset snapshots --group-name AU_XAU
+```
+
+导出运行诊断：
+
+```bash
+python3 scripts/export_runtime_diagnostics.py --hours 12
 ```
 
 回放摘要：

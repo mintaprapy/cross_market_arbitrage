@@ -173,6 +173,8 @@ class AlertService:
             local_dt,
             pair.trading_sessions_local,
             grace_sec=pair.thresholds.stale_alert_grace_sec,
+            non_trading_dates=self.context.config.app.domestic_non_trading_dates_local,
+            weekends_closed=self.context.config.app.domestic_weekends_closed,
         )
 
     def make_alert(

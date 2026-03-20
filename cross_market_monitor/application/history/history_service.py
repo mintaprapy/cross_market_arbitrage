@@ -8,16 +8,18 @@ from datetime import UTC, datetime, timedelta
 from time import perf_counter
 
 from cross_market_monitor.application.common import (
+    DOMESTIC_HISTORY_INTERVAL_BY_RANGE,
     HISTORY_RANGE_CONFIG,
     OVERSEAS_HISTORY_INTERVAL_BY_RANGE,
     default_overseas_symbol,
     infer_product_code,
     utc_now,
+    variant_group_base,
 )
 from cross_market_monitor.application.context import ServiceContext
 from cross_market_monitor.application.control.route_preference_service import RoutePreferenceService
 from cross_market_monitor.application.monitor.source_health import SourceHealthRecorder
-from cross_market_monitor.domain.formulas import compute_spread, normalize_domestic_price
+from cross_market_monitor.domain.formulas import compute_spread, normalize_domestic_price, normalize_domestic_quote
 from cross_market_monitor.domain.models import MarketQuote, PairConfig, QuoteRouteConfig
 from cross_market_monitor.infrastructure.marketdata.tqsdk import (
     TqSdkMainAdapter,
@@ -231,10 +233,9 @@ class HistoryService:
         start_ts: str | None = None,
         end_ts: str | None = None,
     ) -> list[dict]:
-        normalized_rows = self.context.repository.fetch_normalized_domestic_history(
-            pair.group_name,
-            symbol=domestic_symbol,
-            limit=None,
+        normalized_rows = self.load_normalized_domestic_history_rows(
+            pair,
+            domestic_symbol,
             start_ts=start_ts,
             end_ts=end_ts,
         )
@@ -272,11 +273,9 @@ class HistoryService:
                 if history:
                     return history
 
-        domestic_rows = self.context.repository.fetch_raw_quote_history(
-            pair.group_name,
-            "domestic",
-            symbol=domestic_symbol,
-            limit=None,
+        domestic_rows = self.load_raw_domestic_history_rows(
+            pair,
+            domestic_symbol,
             start_ts=start_ts,
             end_ts=end_ts,
         )
@@ -354,6 +353,151 @@ class HistoryService:
                     merged_rows[row_ts] = row
         return [merged_rows[row_ts] for row_ts in sorted(merged_rows)]
 
+    def fx_history_source(self) -> str | None:
+        for source_name in [self.context.config.app.fx_source, *self.context.config.app.fx_backup_sources]:
+            if not source_name:
+                continue
+            adapter = self.context.adapters.get(source_name)
+            if adapter is not None and hasattr(adapter, "fetch_history"):
+                return source_name
+        return None
+
+    def backfill_fx_history(
+        self,
+        *,
+        range_key: str | None = None,
+        start_ts: str | None = None,
+        end_ts: str | None = None,
+    ) -> dict:
+        normalized_range_key = self.normalize_history_range_key(range_key)
+        start_dt, end_dt = self.resolve_history_window(
+            range_key=normalized_range_key,
+            start_ts=start_ts,
+            end_ts=end_ts,
+        )
+        source_name = self.fx_history_source()
+        if source_name is None:
+            return {
+                "supported": False,
+                "range_key": normalized_range_key,
+                "fx_source": None,
+                "pair": "USD/CNY",
+                "reason": "No configured FX source exposes historical backfill",
+            }
+
+        adapter = self.context.adapters[source_name]
+        fetch_history = getattr(adapter, "fetch_history", None)
+        if fetch_history is None:
+            return {
+                "supported": False,
+                "range_key": normalized_range_key,
+                "fx_source": source_name,
+                "pair": "USD/CNY",
+                "reason": f"{source_name} does not expose FX history backfill in the current adapter",
+            }
+
+        started = perf_counter()
+        try:
+            quotes = fetch_history("USD", "CNY", start_ts=start_dt, end_ts=end_dt)
+            latency_ms = (perf_counter() - started) * 1000
+            self.health.record_success(source_name, "USD/CNY", latency_ms)
+        except Exception as exc:
+            latency_ms = (perf_counter() - started) * 1000
+            self.health.record_failure(source_name, "USD/CNY", latency_ms, str(exc))
+            return {
+                "supported": False,
+                "range_key": normalized_range_key,
+                "fx_source": source_name,
+                "pair": "USD/CNY",
+                "reason": str(exc),
+            }
+
+        inserted = 0
+        skipped = 0
+        for quote in quotes:
+            stored = self.context.repository.insert_fx_rate_if_missing(
+                quote,
+                timezone_name=self.context.config.app.timezone,
+            )
+            if stored:
+                inserted += 1
+            else:
+                skipped += 1
+
+        return {
+            "supported": True,
+            "range_key": normalized_range_key,
+            "fx_source": source_name,
+            "pair": "USD/CNY",
+            "requested_start_ts": start_dt.isoformat() if start_dt else None,
+            "requested_end_ts": end_dt.isoformat() if end_dt else None,
+            "available_start_ts": quotes[0].ts.isoformat() if quotes else None,
+            "available_end_ts": quotes[-1].ts.isoformat() if quotes else None,
+            "fetched_rows": len(quotes),
+            "inserted_rows": inserted,
+            "skipped_rows": skipped,
+        }
+
+    def history_domestic_symbols(self, pair: PairConfig, preferred_symbol: str) -> list[str]:
+        symbols: list[str] = []
+        for symbol in (preferred_symbol, pair.domestic_symbol):
+            if symbol and symbol not in symbols:
+                symbols.append(symbol)
+        with suppress(ValueError):
+            history_candidate = self.domestic_history_candidate(pair)
+            if history_candidate.symbol not in symbols:
+                symbols.append(history_candidate.symbol)
+        return symbols
+
+    def load_normalized_domestic_history_rows(
+        self,
+        pair: PairConfig,
+        preferred_symbol: str,
+        *,
+        start_ts: str | None = None,
+        end_ts: str | None = None,
+    ) -> list[dict]:
+        merged: dict[str, dict] = {}
+        for symbol in self.history_domestic_symbols(pair, preferred_symbol):
+            rows = self.context.repository.fetch_normalized_domestic_history(
+                pair.group_name,
+                symbol=symbol,
+                limit=None,
+                start_ts=start_ts,
+                end_ts=end_ts,
+            )
+            for row in rows:
+                key = str(row["ts"])
+                existing = merged.get(key)
+                if existing is None or row["symbol"] == preferred_symbol:
+                    merged[key] = row
+        return sorted(merged.values(), key=lambda row: row["ts"])
+
+    def load_raw_domestic_history_rows(
+        self,
+        pair: PairConfig,
+        preferred_symbol: str,
+        *,
+        start_ts: str | None = None,
+        end_ts: str | None = None,
+    ) -> list[dict]:
+        merged: dict[str, dict] = {}
+        for symbol in self.history_domestic_symbols(pair, preferred_symbol):
+            rows = self.context.repository.fetch_raw_quote_history(
+                pair.group_name,
+                "domestic",
+                symbol=symbol,
+                limit=None,
+                start_ts=start_ts,
+                end_ts=end_ts,
+            )
+            for row in rows:
+                key = str(row["ts"])
+                existing = merged.get(key)
+                if existing is None or row["symbol"] == preferred_symbol:
+                    merged[key] = row
+        return sorted(merged.values(), key=lambda row: row["ts"])
+
     def ensure_overseas_history(
         self,
         pair: PairConfig,
@@ -425,6 +569,120 @@ class HistoryService:
             aligned.append((reference_row, latest_compare_row))
         return aligned
 
+    def backfill_normalized_domestic_history(
+        self,
+        group_name: str,
+        *,
+        range_key: str | None = None,
+        start_ts: str | None = None,
+        end_ts: str | None = None,
+    ) -> dict:
+        linked_groups = self.route_preferences.linked_variant_groups(group_name)
+        selected_group = group_name if group_name in linked_groups else linked_groups[0]
+        normalized_range_key = self.normalize_history_range_key(range_key)
+        start_dt, end_dt = self.resolve_history_window(
+            range_key=normalized_range_key,
+            start_ts=start_ts,
+            end_ts=end_ts,
+        )
+        start_iso = start_dt.isoformat() if start_dt else None
+        end_iso = end_dt.isoformat() if end_dt else None
+        fx_rows = self.fetch_fx_history_rows(start_ts=start_iso, end_ts=end_iso)
+        if not fx_rows:
+            return {
+                "group_name": selected_group,
+                "linked_groups": linked_groups,
+                "supported": False,
+                "range_key": normalized_range_key,
+                "reason": "No FX history is available to normalize domestic history",
+            }
+
+        inserted_total = 0
+        skipped_total = 0
+        per_group: list[dict] = []
+        for linked_group in linked_groups:
+            pair = self.context.pair_map[linked_group]
+            preferred_symbol = self.context.preferred_domestic_symbols.get(linked_group, pair.domestic_symbol)
+            domestic_rows = self.load_raw_domestic_history_rows(
+                pair,
+                preferred_symbol,
+                start_ts=start_iso,
+                end_ts=end_iso,
+            )
+            if not domestic_rows:
+                per_group.append(
+                    {
+                        "group_name": linked_group,
+                        "inserted_rows": 0,
+                        "skipped_rows": 0,
+                        "reason": "No local domestic history is available",
+                    }
+                )
+                continue
+
+            inserted = 0
+            skipped = 0
+            for domestic_row, fx_row in self.align_history_rows(domestic_rows, fx_rows):
+                quote_ts = self.parse_history_ts(domestic_row)
+                if quote_ts is None:
+                    skipped += 1
+                    continue
+                quote = MarketQuote(
+                    source_name=str(domestic_row["source_name"]),
+                    symbol=pair.domestic_symbol,
+                    label=pair.domestic_label,
+                    ts=quote_ts,
+                    last=domestic_row["last_px"],
+                    bid=domestic_row["bid_px"],
+                    ask=domestic_row["ask_px"],
+                    raw_payload=None,
+                )
+                normalized = normalize_domestic_quote(
+                    pair,
+                    float(fx_row["rate"]),
+                    quote.last,
+                    quote.bid,
+                    quote.ask,
+                )
+                stored = self.context.repository.insert_normalized_domestic_quote_if_missing(
+                    linked_group,
+                    quote,
+                    fx_source=str(fx_row["source_name"]),
+                    fx_rate=float(fx_row["rate"]),
+                    formula=pair.formula,
+                    formula_version=pair.formula_version,
+                    tax_mode=pair.tax_mode,
+                    target_unit=pair.target_unit,
+                    normalized_last=normalized.last,
+                    normalized_bid=normalized.bid,
+                    normalized_ask=normalized.ask,
+                    timezone_name=self.context.config.app.timezone,
+                )
+                if stored:
+                    inserted += 1
+                else:
+                    skipped += 1
+            inserted_total += inserted
+            skipped_total += skipped
+            per_group.append(
+                {
+                    "group_name": linked_group,
+                    "inserted_rows": inserted,
+                    "skipped_rows": skipped,
+                }
+            )
+
+        return {
+            "group_name": selected_group,
+            "linked_groups": linked_groups,
+            "supported": True,
+            "range_key": normalized_range_key,
+            "fetched_fx_rows": len(fx_rows),
+            "inserted_rows": inserted_total,
+            "skipped_rows": skipped_total,
+            "per_group": per_group,
+        }
+
     def backfill_domestic_history(
         self,
         group_name: str,
@@ -452,14 +710,14 @@ class HistoryService:
                 "reason": str(exc),
             }
 
-        adapter = self.context.adapters[candidate.source]
-        fetch_history = getattr(adapter, "fetch_history", None)
         normalized_range_key = self.normalize_history_range_key(range_key)
         start_dt, end_dt = self.resolve_history_window(
             range_key=normalized_range_key,
             start_ts=start_ts,
             end_ts=end_ts,
         )
+        adapter = self.context.adapters[candidate.source]
+        fetch_history = getattr(adapter, "fetch_history", None)
         if fetch_history is None:
             return {
                 "group_name": selected_group,
@@ -526,6 +784,13 @@ class HistoryService:
                 }
             )
 
+        normalized_report = self.backfill_normalized_domestic_history(
+            selected_group,
+            range_key=normalized_range_key,
+            start_ts=start_dt.isoformat() if start_dt else None,
+            end_ts=end_dt.isoformat() if end_dt else None,
+        )
+
         return {
             "group_name": selected_group,
             "linked_groups": linked_groups,
@@ -543,6 +808,7 @@ class HistoryService:
             "inserted_rows": inserted_total,
             "skipped_rows": skipped_total,
             "per_group": per_group,
+            "normalized_history": normalized_report,
         }
 
     def domestic_history_candidate(self, pair: PairConfig) -> QuoteRouteConfig:
@@ -705,6 +971,34 @@ class HistoryService:
             )
             entry["group_names"].append(pair.group_name)
         return list(specs_by_product.values())
+
+    async def maybe_backfill_startup_history(self) -> None:
+        if not self.context.config.app.startup_history_backfill_enabled:
+            return
+
+        range_key = self.context.config.app.startup_history_backfill_range_key
+        await asyncio.to_thread(self.backfill_fx_history, range_key=range_key)
+
+        processed_bases: set[str] = set()
+        domestic_interval = DOMESTIC_HISTORY_INTERVAL_BY_RANGE.get(range_key, "30m")
+        overseas_interval = OVERSEAS_HISTORY_INTERVAL_BY_RANGE.get(range_key, "60m")
+        for pair in self.context.enabled_pairs:
+            pair_base = variant_group_base(pair.group_name)
+            if pair_base in processed_bases:
+                continue
+            processed_bases.add(pair_base)
+            await asyncio.to_thread(
+                self.backfill_domestic_history,
+                pair.group_name,
+                interval=domestic_interval,
+                range_key=range_key,
+            )
+            await asyncio.to_thread(
+                self.backfill_overseas_history,
+                pair.group_name,
+                interval=overseas_interval,
+                range_key=range_key,
+            )
 
     async def maybe_backfill_tqsdk_shadow_history(self) -> None:
         if not self.context.config.app.tqsdk_shadow_enabled or not self.context.config.app.tqsdk_startup_backfill_enabled:

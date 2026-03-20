@@ -47,6 +47,7 @@ class RuntimeService:
     async def startup(self) -> None:
         if self.context.startup_completed:
             return
+        await self.history.maybe_backfill_startup_history()
         await self.history.maybe_backfill_tqsdk_shadow_history()
         self.history.start_tqsdk_shadow_collector()
         await asyncio.to_thread(self.retention.maybe_run, force=True)

@@ -97,6 +97,36 @@ class SQLiteWriterMixin:
                 (ts, ts_utc, ts_local, quote.source_name, quote.pair, quote.rate, quote.raw_payload),
             )
 
+    def insert_fx_rate_if_missing(self, quote: FXQuote, *, timezone_name: str = "UTC") -> bool:
+        ts, ts_utc, ts_local = self._timestamp_fields(quote.ts, timezone_name)
+        with self._lock, self._connect() as connection:
+            cursor = connection.execute(
+                """
+                INSERT INTO fx_rates (ts, ts_utc, ts_local, source_name, pair, rate, raw_payload)
+                SELECT ?, ?, ?, ?, ?, ?, ?
+                WHERE NOT EXISTS (
+                    SELECT 1
+                    FROM fx_rates
+                    WHERE source_name = ?
+                      AND pair = ?
+                      AND ts = ?
+                )
+                """,
+                (
+                    ts,
+                    ts_utc,
+                    ts_local,
+                    quote.source_name,
+                    quote.pair,
+                    quote.rate,
+                    quote.raw_payload,
+                    quote.source_name,
+                    quote.pair,
+                    ts,
+                ),
+            )
+        return cursor.rowcount > 0
+
     def insert_normalized_domestic_quote(
         self,
         group_name: str,
@@ -145,6 +175,69 @@ class SQLiteWriterMixin:
                     normalized_ask,
                 ),
             )
+
+    def insert_normalized_domestic_quote_if_missing(
+        self,
+        group_name: str,
+        quote: MarketQuote,
+        *,
+        fx_source: str,
+        fx_rate: float,
+        formula: str,
+        formula_version: str,
+        tax_mode: str,
+        target_unit: str,
+        normalized_last: float | None,
+        normalized_bid: float | None,
+        normalized_ask: float | None,
+        timezone_name: str = "UTC",
+    ) -> bool:
+        ts, ts_utc, ts_local = self._timestamp_fields(quote.ts, timezone_name)
+        with self._lock, self._connect() as connection:
+            cursor = connection.execute(
+                """
+                INSERT INTO normalized_domestic_quotes (
+                    ts, ts_utc, ts_local, group_name, source_name, symbol, label,
+                    fx_source, fx_rate, formula, formula_version, tax_mode, target_unit,
+                    raw_last, raw_bid, raw_ask, normalized_last, normalized_bid, normalized_ask
+                )
+                SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                WHERE NOT EXISTS (
+                    SELECT 1
+                    FROM normalized_domestic_quotes
+                    WHERE group_name = ?
+                      AND source_name = ?
+                      AND symbol = ?
+                      AND ts = ?
+                )
+                """,
+                (
+                    ts,
+                    ts_utc,
+                    ts_local,
+                    group_name,
+                    quote.source_name,
+                    quote.symbol,
+                    quote.label,
+                    fx_source,
+                    fx_rate,
+                    formula,
+                    formula_version,
+                    tax_mode,
+                    target_unit,
+                    quote.last,
+                    quote.bid,
+                    quote.ask,
+                    normalized_last,
+                    normalized_bid,
+                    normalized_ask,
+                    group_name,
+                    quote.source_name,
+                    quote.symbol,
+                    ts,
+                ),
+            )
+        return cursor.rowcount > 0
 
     def insert_snapshot(self, snapshot: SpreadSnapshot, *, timezone_name: str = "UTC") -> None:
         ts, ts_utc, ts_local = self._timestamp_fields(snapshot.ts, timezone_name)
@@ -271,4 +364,3 @@ class SQLiteWriterMixin:
                     json.dumps(delivery.payload, ensure_ascii=False),
                 ),
             )
-

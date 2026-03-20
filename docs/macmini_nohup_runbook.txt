@@ -1,0 +1,152 @@
+Mac mini 本地后台运行
+
+适用场景：
+
+- 本机安装目录：/Users/m2/opt/cross_market_arbitrage
+- 通过 nohup 长时间后台运行
+- 不使用 systemd
+
+1. 首次安装
+
+cd /Users/m2/opt
+git clone https://github.com/mintaprapy/cross_market_arbitrage.git
+cd /Users/m2/opt/cross_market_arbitrage
+
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -e ".[tqsdk,parquet]"
+
+cp config/monitor.secrets.local.example.yaml config/monitor.secrets.local.yaml
+cp config/monitor.notifiers.local.example.yaml config/monitor.notifiers.local.yaml
+
+然后按需填写：
+
+- config/monitor.secrets.local.yaml
+- config/monitor.notifiers.local.yaml
+
+2. 启动前检查
+
+默认页面端口：
+
+- 6080
+
+如果只在 Mac mini 本机访问，推荐使用：
+
+- 127.0.0.1
+
+如果要给局域网其他设备访问，启动时改成：
+
+- 0.0.0.0
+
+3. 后台启动
+
+仅本机访问：
+
+cd /Users/m2/opt/cross_market_arbitrage
+mkdir -p logs
+ts=$(date +%Y%m%d_%H%M%S)
+log="/Users/m2/opt/cross_market_arbitrage/logs/runtime_${ts}.log"
+ln -sfn "$log" /Users/m2/opt/cross_market_arbitrage/logs/runtime_latest.log
+
+nohup /Users/m2/opt/cross_market_arbitrage/.venv/bin/python \
+  -m cross_market_monitor.main \
+  --config /Users/m2/opt/cross_market_arbitrage/config/monitor.yaml \
+  serve --host 127.0.0.1 --port 6080 \
+  > "$log" 2>&1 &
+
+echo $! > /Users/m2/opt/cross_market_arbitrage/logs/runtime.pid
+
+局域网访问：
+
+cd /Users/m2/opt/cross_market_arbitrage
+mkdir -p logs
+ts=$(date +%Y%m%d_%H%M%S)
+log="/Users/m2/opt/cross_market_arbitrage/logs/runtime_${ts}.log"
+ln -sfn "$log" /Users/m2/opt/cross_market_arbitrage/logs/runtime_latest.log
+
+nohup /Users/m2/opt/cross_market_arbitrage/.venv/bin/python \
+  -m cross_market_monitor.main \
+  --config /Users/m2/opt/cross_market_arbitrage/config/monitor.yaml \
+  serve --host 0.0.0.0 --port 6080 \
+  > "$log" 2>&1 &
+
+echo $! > /Users/m2/opt/cross_market_arbitrage/logs/runtime.pid
+
+4. 运行检查
+
+查看进程：
+
+ps -p "$(cat /Users/m2/opt/cross_market_arbitrage/logs/runtime.pid)" -o pid,etime,command
+
+查看日志：
+
+tail -f /Users/m2/opt/cross_market_arbitrage/logs/runtime_latest.log
+
+健康检查：
+
+curl -fsS http://127.0.0.1:6080/api/health | python3 -m json.tool
+
+页面地址：
+
+- 本机：http://127.0.0.1:6080/
+- 局域网：http://<Mac mini 局域网 IP>:6080/
+
+5. 停止
+
+优先按 PID 停止：
+
+kill "$(cat /Users/m2/opt/cross_market_arbitrage/logs/runtime.pid)"
+rm -f /Users/m2/opt/cross_market_arbitrage/logs/runtime.pid
+
+如果 PID 文件丢了：
+
+pkill -f 'cross_market_monitor.main --config /Users/m2/opt/cross_market_arbitrage/config/monitor.yaml serve'
+
+6. 重启
+
+kill "$(cat /Users/m2/opt/cross_market_arbitrage/logs/runtime.pid)" || true
+rm -f /Users/m2/opt/cross_market_arbitrage/logs/runtime.pid
+
+cd /Users/m2/opt/cross_market_arbitrage
+ts=$(date +%Y%m%d_%H%M%S)
+log="/Users/m2/opt/cross_market_arbitrage/logs/runtime_${ts}.log"
+ln -sfn "$log" /Users/m2/opt/cross_market_arbitrage/logs/runtime_latest.log
+
+nohup /Users/m2/opt/cross_market_arbitrage/.venv/bin/python \
+  -m cross_market_monitor.main \
+  --config /Users/m2/opt/cross_market_arbitrage/config/monitor.yaml \
+  serve --host 127.0.0.1 --port 6080 \
+  > "$log" 2>&1 &
+
+echo $! > /Users/m2/opt/cross_market_arbitrage/logs/runtime.pid
+
+如果你本来跑的是局域网版本，重启时把 127.0.0.1 改回 0.0.0.0。
+
+7. 更新代码后重启
+
+cd /Users/m2/opt/cross_market_arbitrage
+git pull --ff-only origin main
+/Users/m2/opt/cross_market_arbitrage/.venv/bin/python -m pip install -e ".[tqsdk,parquet]"
+
+kill "$(cat /Users/m2/opt/cross_market_arbitrage/logs/runtime.pid)" || true
+rm -f /Users/m2/opt/cross_market_arbitrage/logs/runtime.pid
+
+ts=$(date +%Y%m%d_%H%M%S)
+log="/Users/m2/opt/cross_market_arbitrage/logs/runtime_${ts}.log"
+ln -sfn "$log" /Users/m2/opt/cross_market_arbitrage/logs/runtime_latest.log
+
+nohup /Users/m2/opt/cross_market_arbitrage/.venv/bin/python \
+  -m cross_market_monitor.main \
+  --config /Users/m2/opt/cross_market_arbitrage/config/monitor.yaml \
+  serve --host 127.0.0.1 --port 6080 \
+  > "$log" 2>&1 &
+
+echo $! > /Users/m2/opt/cross_market_arbitrage/logs/runtime.pid
+
+8. 建议
+
+- 如果你只是先验证稳定性，先用 127.0.0.1
+- 先不要接 nginx
+- 先连续跑一晚，再看数据源稳定性
+- 如果后面要长期托管在 Mac mini 上，再考虑换成 launchd

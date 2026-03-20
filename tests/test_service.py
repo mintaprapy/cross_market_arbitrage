@@ -5,6 +5,7 @@ from datetime import UTC, datetime, timedelta
 from unittest import mock
 
 from cross_market_monitor.application.service import MonitorService
+from cross_market_monitor.application.monitor.runtime import MonitorRuntime
 from cross_market_monitor.domain.models import FXQuote, MarketQuote, MonitorConfig, SourceHealth, SpreadSnapshot, WorkerRuntimeState
 from cross_market_monitor.infrastructure.marketdata.tqsdk import TqSdkMainAdapter
 from cross_market_monitor.infrastructure.repository import SQLiteRepository
@@ -2032,6 +2033,64 @@ class MonitorServiceTests(unittest.TestCase):
             self.assertTrue(history)
             self.assertEqual(history[0]["domestic_symbol"], "nf_AU0")
             self.assertLess(history[0]["ts"], "2026-03-19T14:09:00+00:00")
+
+    def test_runtime_can_start_with_background_history(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repository = SQLiteRepository(f"{tmp_dir}/monitor.db")
+            config = MonitorConfig.model_validate(
+                {
+                    "app": {
+                        "name": "test",
+                        "fx_source": "fx",
+                        "sqlite_path": f"{tmp_dir}/monitor.db",
+                        "startup_history_backfill_enabled": True,
+                    },
+                    "sources": {
+                        "domestic": {"kind": "mock_quote", "base_url": "http://local"},
+                        "overseas": {"kind": "mock_quote", "base_url": "http://local"},
+                        "fx": {"kind": "mock_fx", "base_url": "http://local"},
+                    },
+                    "pairs": [
+                        {
+                            "group_name": "AU_XAU",
+                            "domestic_source": "domestic",
+                            "domestic_symbol": "nf_AU0",
+                            "domestic_label": "AU Main",
+                            "overseas_source": "overseas",
+                            "overseas_symbol": "XAUUSDT",
+                            "overseas_label": "Binance XAU",
+                            "formula": "gold",
+                            "domestic_unit": "CNY_PER_GRAM",
+                            "target_unit": "USD_PER_OUNCE",
+                        }
+                    ],
+                }
+            )
+            service = MonitorService(config, repository)
+            runtime = MonitorRuntime(service.runtime)
+            startup_started = asyncio.Event()
+
+            async def slow_backfill() -> None:
+                startup_started.set()
+                await asyncio.sleep(0.2)
+
+            async def run_case() -> None:
+                with (
+                    mock.patch.object(service.history, "maybe_backfill_startup_history", side_effect=slow_backfill),
+                    mock.patch.object(service.history, "maybe_backfill_tqsdk_shadow_history", return_value=None),
+                    mock.patch.object(service.history, "start_tqsdk_shadow_collector", return_value=None),
+                    mock.patch.object(service.retention, "maybe_run", return_value=None),
+                ):
+                    await runtime.start(background_startup=True)
+                    await asyncio.sleep(0.01)
+                    self.assertTrue(startup_started.is_set())
+                    self.assertIsNotNone(service.context.startup_task)
+                    self.assertFalse(service.context.startup_task.done())
+                    self.assertTrue(service.context.startup_completed)
+                    self.assertIsNotNone(runtime.task)
+                    await runtime.stop()
+
+            asyncio.run(run_case())
 
     def test_normalized_history_backfill_merges_tqsdk_and_live_domestic_symbols(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

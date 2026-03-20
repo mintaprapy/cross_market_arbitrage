@@ -208,8 +208,8 @@ class MonitorService:
     async def run_forever(self) -> None:
         await self.runtime.run_forever()
 
-    async def startup(self) -> None:
-        await self.runtime.startup()
+    async def startup(self, *, background_history: bool = False) -> None:
+        await self.runtime.startup(background_history=background_history)
 
     async def shutdown(self) -> None:
         await self.runtime.shutdown()

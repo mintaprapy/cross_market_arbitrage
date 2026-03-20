@@ -32,7 +32,7 @@ def create_app(service: MonitorService, *, run_runtime: bool = True) -> FastAPI:
             yield
             return
         runtime = MonitorRuntime(service)
-        await runtime.start()
+        await runtime.start(background_startup=True)
         yield
         await runtime.stop()
 

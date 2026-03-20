@@ -1,19 +1,25 @@
 import unittest
 from datetime import UTC, datetime
+from urllib.error import HTTPError
 
 from cross_market_monitor.domain.models import SourceConfig
 from cross_market_monitor.infrastructure.marketdata.sina import SinaFxAdapter, parse_sina_fx_payload
 
 
 class FakeHttpClient:
-    def __init__(self, payload: str) -> None:
+    def __init__(self, payload: str, *, failures: dict[str, Exception] | None = None) -> None:
         self.payload = payload
+        self.failures = failures or {}
         self.last_url: str | None = None
         self.last_headers: dict[str, str] | None = None
+        self.calls: list[str] = []
 
     def get_text(self, url: str, headers: dict[str, str] | None = None) -> str:
         self.last_url = url
         self.last_headers = headers or {}
+        self.calls.append(url)
+        if url in self.failures:
+            raise self.failures[url]
         return self.payload
 
 
@@ -48,7 +54,47 @@ class SinaFxAdapterTests(unittest.TestCase):
         quote = adapter.fetch_rate("USD", "CNY")
 
         self.assertEqual(http_client.last_url, "https://hq.sinajs.cn/list=fx_susdcny")
+        self.assertEqual(http_client.last_headers["Referer"], "https://finance.sina.com.cn")
+        self.assertIn("Mozilla/5.0", http_client.last_headers["User-Agent"])
+        self.assertEqual(http_client.last_headers["Accept-Language"], "zh-CN,zh;q=0.9,en;q=0.8")
         self.assertEqual(quote.pair, "USD/CNY")
+        self.assertEqual(quote.rate, 6.883)
+
+    def test_adapter_falls_back_to_http_when_https_is_forbidden(self) -> None:
+        payload = 'var hq_str_fx_susdcny="08:50:40,6.883000,6.883500,6.878300,98,6.879400,6.884200,6.874400,6.883000,离岸人民币（香港）,, ,,, ,,,2026-03-20";'
+        http_client = FakeHttpClient(
+            payload,
+            failures={
+                "https://hq.sinajs.cn/list=fx_susdcny": HTTPError(
+                    "https://hq.sinajs.cn/list=fx_susdcny",
+                    403,
+                    "Forbidden",
+                    hdrs=None,
+                    fp=None,
+                )
+            },
+        )
+        source_config = SourceConfig.model_validate(
+            {
+                "kind": "sina_fx",
+                "base_url": "https://hq.sinajs.cn",
+                "headers": {"Referer": "https://finance.sina.com.cn"},
+                "params": {"symbol": "fx_susdcny"},
+                "verify_ssl": True,
+            }
+        )
+
+        adapter = SinaFxAdapter("sina_fx", source_config, http_client)
+        quote = adapter.fetch_rate("USD", "CNY")
+
+        self.assertEqual(
+            http_client.calls,
+            [
+                "https://hq.sinajs.cn/list=fx_susdcny",
+                "http://hq.sinajs.cn/list=fx_susdcny",
+            ],
+        )
+        self.assertEqual(http_client.last_url, "http://hq.sinajs.cn/list=fx_susdcny")
         self.assertEqual(quote.rate, 6.883)
 
 

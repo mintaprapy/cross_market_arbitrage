@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+from urllib.parse import urlsplit, urlunsplit
 from datetime import UTC, datetime, timedelta
 
 from cross_market_monitor.domain.models import FXQuote, MarketQuote, SourceConfig
@@ -79,9 +80,10 @@ class SinaFuturesAdapter:
         self.http_client = http_client
 
     def fetch_quote(self, symbol: str, label: str) -> MarketQuote:
-        payload = self.http_client.get_text(
+        payload = _fetch_sina_text(
+            self.http_client,
+            self.source_config,
             f"{self.source_config.base_url}/list={symbol}",
-            headers=self.source_config.headers,
         )
         return parse_sina_futures_payload(self.source_name, symbol, label, payload)
 
@@ -152,12 +154,52 @@ class SinaFxAdapter:
     def fetch_rate(self, base: str, quote: str) -> FXQuote:
         pair = f"{base}/{quote}"
         symbol = self.source_config.params.get("symbol") or f"fx_s{base}{quote}".lower()
-        payload = self.http_client.get_text(
+        payload = _fetch_sina_text(
+            self.http_client,
+            self.source_config,
             f"{self.source_config.base_url}/list={symbol}",
-            headers=self.source_config.headers,
         )
         parsed = parse_sina_fx_payload(self.source_name, pair, payload)
         return parsed.model_copy(update={"ts": datetime.now(UTC)})
+
+
+def _fetch_sina_text(http_client: HttpClient, source_config: SourceConfig, url: str) -> str:
+    headers = _sina_request_headers(source_config)
+    last_error: Exception | None = None
+    for candidate_url in _sina_candidate_urls(url):
+        try:
+            return http_client.get_text(candidate_url, headers=headers)
+        except Exception as exc:  # pragma: no cover - exercised via adapter fallback test
+            last_error = exc
+            continue
+    if last_error is not None:
+        raise last_error
+    raise RuntimeError(f"Unable to fetch Sina payload from {url}")
+
+
+def _sina_request_headers(source_config: SourceConfig) -> dict[str, str]:
+    headers = {
+        "Referer": "https://finance.sina.com.cn",
+        "User-Agent": (
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/126.0.0.0 Safari/537.36"
+        ),
+        "Accept": "*/*",
+        "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+        "Cache-Control": "no-cache",
+        "Pragma": "no-cache",
+    }
+    headers.update(source_config.headers)
+    return headers
+
+
+def _sina_candidate_urls(url: str) -> list[str]:
+    candidates = [url]
+    parsed = urlsplit(url)
+    if parsed.scheme == "https" and parsed.netloc == "hq.sinajs.cn":
+        candidates.append(urlunsplit(("http", parsed.netloc, parsed.path, parsed.query, parsed.fragment)))
+    return candidates
 
 
 def parse_sina_history_payload(

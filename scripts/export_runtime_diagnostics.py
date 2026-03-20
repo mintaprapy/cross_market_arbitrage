@@ -22,6 +22,8 @@ from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import urlopen
 
+import yaml
+
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
@@ -153,9 +155,27 @@ def copy_optional_file(src: Path, dst: Path) -> None:
         shutil.copy2(src, dst)
 
 
+def iter_import_paths(config_path: Path) -> list[Path]:
+    raw = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+    imports = raw.get("imports") or []
+    paths: list[Path] = []
+    for item in imports:
+        if not isinstance(item, str):
+            continue
+        import_path = Path(item)
+        if not import_path.is_absolute():
+            import_path = (config_path.parent / import_path).resolve()
+        paths.append(import_path)
+    return paths
+
+
 def collect_repo_artifacts(output_dir: Path, config_path: Path, config) -> None:
     copy_optional_file(config_path, output_dir / "monitor.yaml")
     copy_optional_file(ROOT / "config" / "monitor.example.yaml", output_dir / "monitor.example.yaml")
+    for imported_path in iter_import_paths(config_path):
+        copy_optional_file(imported_path, output_dir / imported_path.name)
+    for example_path in sorted((ROOT / "config").glob("monitor.*.example.yaml")):
+        copy_optional_file(example_path, output_dir / example_path.name)
     if config.app.domestic_trading_calendar_path:
         copy_optional_file(Path(config.app.domestic_trading_calendar_path), output_dir / Path(config.app.domestic_trading_calendar_path).name)
     copy_optional_file(ROOT / "systemd" / "cross-market-monitor.service", output_dir / "cross-market-monitor.repo.service")

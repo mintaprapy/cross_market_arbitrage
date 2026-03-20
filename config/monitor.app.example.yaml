@@ -1,0 +1,33 @@
+app:
+  name: Cross Market Commodity Monitor
+  timezone: Asia/Shanghai
+  domestic_trading_calendar_path: domestic_trading_calendar.cn_futures.2026.yaml
+  poll_interval_sec: 10
+  fx_poll_interval_sec: 3600
+  history_limit: 1000
+  rolling_window_size: 120
+  http_timeout_sec: 8
+  sqlite_path: data/monitor.db
+  fx_source: sina_fx
+  fx_backup_sources: [frankfurter]
+  bind_host: 127.0.0.1
+  bind_port: 6080
+  export_dir: exports
+  fx_window_size: 60
+  replay_target_daily_vol_pct: 0.015
+  startup_history_backfill_enabled: true
+  startup_history_backfill_range_key: 30d
+  tqsdk_shadow_source: null
+  tqsdk_shadow_enabled: false
+  tqsdk_shadow_poll_interval_sec: 10
+  tqsdk_startup_backfill_enabled: false
+  tqsdk_startup_backfill_interval: 30m
+  tqsdk_startup_backfill_range_key: 30d
+  retention_enabled: true
+  retention_interval_sec: 21600
+  raw_quote_retention_days: 30
+  fx_rate_retention_days: 30
+  normalized_quote_retention_days: 30
+  snapshot_retention_days: 180
+  alert_retention_days: 30
+  delivery_retention_days: 30

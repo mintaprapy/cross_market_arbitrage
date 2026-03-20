@@ -1,0 +1,52 @@
+sources:
+  sina_domestic:
+    kind: sina_futures
+    base_url: https://hq.sinajs.cn
+    verify_ssl: true
+    headers:
+      Referer: https://finance.sina.com.cn
+      User-Agent: Mozilla/5.0
+  sina_fx:
+    kind: sina_fx
+    base_url: https://hq.sinajs.cn
+    verify_ssl: true
+    headers:
+      Referer: https://finance.sina.com.cn
+      User-Agent: Mozilla/5.0
+    params:
+      symbol: fx_susdcny
+  tqsdk_domestic:
+    kind: tqsdk_main
+    base_url: wss://free-api.shinnytech.com/t/nfmd/front/mobile
+    verify_ssl: true
+    params:
+      auth_user: ""
+      auth_password: ""
+      md_url: wss://free-api.shinnytech.com/t/nfmd/front/mobile
+      login_retry_attempts: "3"
+      history_retry_attempts: "3"
+      retry_backoff_sec: "1.5"
+      retry_max_backoff_sec: "8"
+  binance_futures:
+    kind: binance_futures
+    base_url: https://fapi.binance.com
+    verify_ssl: true
+  okx_swap:
+    kind: okx_swap
+    base_url: https://www.okx.com
+    verify_ssl: true
+  hyperliquid:
+    kind: hyperliquid
+    base_url: https://api.hyperliquid.xyz
+    verify_ssl: true
+  cme_nymex:
+    kind: cme_reference
+    base_url: https://www.cmegroup.com/CmeWS/mvc/Quotes/Future
+    verify_ssl: true
+    headers:
+      Accept: application/json
+      Referer: https://www.cmegroup.com/
+  frankfurter:
+    kind: frankfurter_fx
+    base_url: https://api.frankfurter.app
+    verify_ssl: true

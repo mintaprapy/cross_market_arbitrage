@@ -1,0 +1,313 @@
+pairs:
+  - group_name: AU_XAU
+    domestic_source: sina_domestic
+    domestic_symbol: nf_AU0
+    domestic_label: SHFE AU Continuous
+    domestic_history_source: tqsdk_domestic
+    domestic_product_code: au
+    domestic_candidates:
+      - source: sina_domestic
+        symbol: nf_AU0
+        label: SHFE AU Continuous
+    overseas_source: binance_futures
+    overseas_symbol: XAUUSDT
+    overseas_label: Binance XAUUSDT Perpetual
+    overseas_candidates:
+      - source: binance_futures
+        symbol: XAUUSDT
+        label: Binance XAUUSDT Perpetual
+      - source: okx_swap
+        symbol: XAU-USDT-SWAP
+        label: OKX XAU Swap
+    formula: gold
+    target_unit: USD_PER_OUNCE
+    domestic_unit: CNY_PER_GRAM
+    tax_mode: gross
+    hedge_contract_size: 32.1507
+    trading_sessions_local: ["09:00-10:15", "10:30-11:30", "13:30-15:00", "21:00-02:30"]
+    thresholds:
+      spread_pct_abs: 0.02
+      zscore_abs: 2.5
+      spread_alert_above:
+      spread_alert_below:
+      stale_seconds: 180
+      max_skew_seconds: 180
+      alert_cooldown_seconds: 300
+      fx_jump_abs_pct: 0.005
+      pause_on_fx_jump: true
+    costs:
+      domestic_fee_bps: 1.0
+      overseas_fee_bps: 1.0
+      domestic_slippage_bps: 1.0
+      overseas_slippage_bps: 1.0
+      funding_bps_per_day: 0.5
+      holding_hours: 24
+
+  - group_name: AG_XAG_GROSS
+    domestic_source: sina_domestic
+    domestic_symbol: nf_AG0
+    domestic_label: SHFE AG Continuous
+    domestic_history_source: tqsdk_domestic
+    domestic_product_code: ag
+    domestic_candidates:
+      - source: sina_domestic
+        symbol: nf_AG0
+        label: SHFE AG Continuous
+    overseas_source: binance_futures
+    overseas_symbol: XAGUSDT
+    overseas_label: Binance XAGUSDT Perpetual
+    overseas_candidates:
+      - source: binance_futures
+        symbol: XAGUSDT
+        label: Binance XAGUSDT Perpetual
+      - source: okx_swap
+        symbol: XAG-USDT-SWAP
+        label: OKX XAG Swap
+    formula: silver
+    target_unit: USD_PER_OUNCE
+    domestic_unit: CNY_PER_KG
+    tax_mode: gross
+    hedge_contract_size: 482.2612
+    trading_sessions_local: ["09:00-10:15", "10:30-11:30", "13:30-15:00", "21:00-02:30"]
+    thresholds:
+      spread_pct_abs: 0.025
+      zscore_abs: 2.5
+      spread_alert_above:
+      spread_alert_below:
+      stale_seconds: 180
+      max_skew_seconds: 180
+      alert_cooldown_seconds: 300
+      fx_jump_abs_pct: 0.005
+      pause_on_fx_jump: true
+    costs:
+      domestic_fee_bps: 1.2
+      overseas_fee_bps: 1.0
+      domestic_slippage_bps: 1.5
+      overseas_slippage_bps: 1.2
+      funding_bps_per_day: 0.5
+      holding_hours: 24
+
+  - group_name: AG_XAG_NET
+    domestic_source: sina_domestic
+    domestic_symbol: nf_AG0
+    domestic_label: SHFE AG Continuous
+    domestic_history_source: tqsdk_domestic
+    domestic_product_code: ag
+    domestic_candidates:
+      - source: sina_domestic
+        symbol: nf_AG0
+        label: SHFE AG Continuous
+    overseas_source: binance_futures
+    overseas_symbol: XAGUSDT
+    overseas_label: Binance XAGUSDT Perpetual
+    overseas_candidates:
+      - source: binance_futures
+        symbol: XAGUSDT
+        label: Binance XAGUSDT Perpetual
+      - source: okx_swap
+        symbol: XAG-USDT-SWAP
+        label: OKX XAG Swap
+    formula: silver
+    target_unit: USD_PER_OUNCE
+    domestic_unit: CNY_PER_KG
+    tax_mode: net
+    hedge_contract_size: 482.2612
+    trading_sessions_local: ["09:00-10:15", "10:30-11:30", "13:30-15:00", "21:00-02:30"]
+    thresholds:
+      spread_pct_abs: 0.025
+      zscore_abs: 2.5
+      spread_alert_above:
+      spread_alert_below:
+      stale_seconds: 180
+      max_skew_seconds: 180
+      alert_cooldown_seconds: 300
+      fx_jump_abs_pct: 0.005
+      pause_on_fx_jump: true
+    costs:
+      domestic_fee_bps: 1.2
+      overseas_fee_bps: 1.0
+      domestic_slippage_bps: 1.5
+      overseas_slippage_bps: 1.2
+      funding_bps_per_day: 0.5
+      holding_hours: 24
+
+  - group_name: CU_COPPER_GROSS
+    domestic_source: sina_domestic
+    domestic_symbol: nf_CU0
+    domestic_label: SHFE CU Continuous
+    domestic_history_source: tqsdk_domestic
+    domestic_product_code: cu
+    domestic_candidates:
+      - source: sina_domestic
+        symbol: nf_CU0
+        label: SHFE CU Continuous
+    overseas_source: binance_futures
+    overseas_symbol: COPPERUSDT
+    overseas_label: Binance COPPERUSDT Perpetual
+    overseas_candidates:
+      - source: binance_futures
+        symbol: COPPERUSDT
+        label: Binance COPPERUSDT Perpetual
+      - source: okx_swap
+        symbol: XCU-USDT-SWAP
+        label: OKX XCU Swap
+    formula: copper
+    target_unit: USD_PER_POUND
+    domestic_unit: CNY_PER_TON
+    tax_mode: gross
+    hedge_contract_size: 11023.1131
+    trading_sessions_local: ["09:00-10:15", "10:30-11:30", "13:30-15:00", "21:00-01:00"]
+    thresholds:
+      spread_pct_abs: 0.02
+      zscore_abs: 2.3
+      spread_alert_above:
+      spread_alert_below:
+      stale_seconds: 180
+      max_skew_seconds: 180
+      alert_cooldown_seconds: 300
+      fx_jump_abs_pct: 0.005
+      pause_on_fx_jump: true
+    costs:
+      domestic_fee_bps: 1.2
+      overseas_fee_bps: 1.2
+      domestic_slippage_bps: 1.8
+      overseas_slippage_bps: 1.5
+      funding_bps_per_day: 0.5
+      holding_hours: 24
+
+  - group_name: CU_COPPER_NET
+    domestic_source: sina_domestic
+    domestic_symbol: nf_CU0
+    domestic_label: SHFE CU Continuous
+    domestic_history_source: tqsdk_domestic
+    domestic_product_code: cu
+    domestic_candidates:
+      - source: sina_domestic
+        symbol: nf_CU0
+        label: SHFE CU Continuous
+    overseas_source: binance_futures
+    overseas_symbol: COPPERUSDT
+    overseas_label: Binance COPPERUSDT Perpetual
+    overseas_candidates:
+      - source: binance_futures
+        symbol: COPPERUSDT
+        label: Binance COPPERUSDT Perpetual
+      - source: okx_swap
+        symbol: XCU-USDT-SWAP
+        label: OKX XCU Swap
+    formula: copper
+    target_unit: USD_PER_POUND
+    domestic_unit: CNY_PER_TON
+    tax_mode: net
+    hedge_contract_size: 11023.1131
+    trading_sessions_local: ["09:00-10:15", "10:30-11:30", "13:30-15:00", "21:00-01:00"]
+    thresholds:
+      spread_pct_abs: 0.02
+      zscore_abs: 2.3
+      spread_alert_above:
+      spread_alert_below:
+      stale_seconds: 180
+      max_skew_seconds: 180
+      alert_cooldown_seconds: 300
+      fx_jump_abs_pct: 0.005
+      pause_on_fx_jump: true
+    costs:
+      domestic_fee_bps: 1.2
+      overseas_fee_bps: 1.2
+      domestic_slippage_bps: 1.8
+      overseas_slippage_bps: 1.5
+      funding_bps_per_day: 0.5
+      holding_hours: 24
+
+  - group_name: BC_COPPER
+    domestic_source: sina_domestic
+    domestic_symbol: nf_BC0
+    domestic_label: INE BC Continuous
+    domestic_history_source: tqsdk_domestic
+    domestic_product_code: bc
+    domestic_candidates:
+      - source: sina_domestic
+        symbol: nf_BC0
+        label: INE BC Continuous
+    overseas_source: binance_futures
+    overseas_symbol: COPPERUSDT
+    overseas_label: Binance COPPERUSDT Perpetual
+    overseas_candidates:
+      - source: binance_futures
+        symbol: COPPERUSDT
+        label: Binance COPPERUSDT Perpetual
+      - source: okx_swap
+        symbol: XCU-USDT-SWAP
+        label: OKX XCU Swap
+    formula: copper
+    target_unit: USD_PER_POUND
+    domestic_unit: CNY_PER_TON
+    tax_mode: gross
+    hedge_contract_size: 11023.1131
+    trading_sessions_local: ["09:00-10:15", "10:30-11:30", "13:30-15:00", "21:00-01:00"]
+    thresholds:
+      spread_pct_abs: 0.02
+      zscore_abs: 2.3
+      spread_alert_above:
+      spread_alert_below:
+      stale_seconds: 180
+      max_skew_seconds: 180
+      alert_cooldown_seconds: 300
+      fx_jump_abs_pct: 0.005
+      pause_on_fx_jump: true
+    costs:
+      domestic_fee_bps: 1.0
+      overseas_fee_bps: 1.2
+      domestic_slippage_bps: 1.5
+      overseas_slippage_bps: 1.5
+      funding_bps_per_day: 0.5
+      holding_hours: 24
+
+  - group_name: SC_CL
+    domestic_source: sina_domestic
+    domestic_symbol: nf_SC0
+    domestic_label: INE SC Continuous
+    domestic_history_source: tqsdk_domestic
+    domestic_product_code: sc
+    domestic_candidates:
+      - source: sina_domestic
+        symbol: nf_SC0
+        label: INE SC Continuous
+    overseas_source: okx_swap
+    overseas_symbol: CL-USDT-SWAP
+    overseas_label: OKX CL Swap
+    overseas_candidates:
+      - source: okx_swap
+        symbol: CL-USDT-SWAP
+        label: OKX CL Swap
+      - source: cme_nymex
+        symbol: "425"
+        label: CME NYMEX CL Reference
+        enabled: false
+      - source: hyperliquid
+        symbol: CL
+        label: Hyperliquid CL
+        enabled: false
+    formula: crude_oil
+    target_unit: USD_PER_BARREL
+    domestic_unit: CNY_PER_BARREL
+    tax_mode: gross
+    hedge_contract_size: 1000
+    trading_sessions_local: ["09:00-10:15", "10:30-11:30", "13:30-15:00", "21:00-02:30"]
+    thresholds:
+      spread_pct_abs: 0.03
+      zscore_abs: 2.2
+      spread_alert_above:
+      spread_alert_below:
+      stale_seconds: 180
+      max_skew_seconds: 180
+      alert_cooldown_seconds: 300
+      fx_jump_abs_pct: 0.005
+      pause_on_fx_jump: true
+    costs:
+      domestic_fee_bps: 1.0
+      overseas_fee_bps: 1.0
+      domestic_slippage_bps: 2.0
+      overseas_slippage_bps: 1.8
+      funding_bps_per_day: 0.5
+      holding_hours: 24

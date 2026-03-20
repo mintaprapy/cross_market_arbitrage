@@ -32,6 +32,10 @@ sudo chown -R ubuntu:ubuntu /srv/cross_market_arbitrage
 ```bash
 cd /srv/cross_market_arbitrage
 cp config/monitor.example.yaml config/monitor.yaml
+cp config/monitor.app.example.yaml config/monitor.app.yaml
+cp config/monitor.sources.example.yaml config/monitor.sources.yaml
+cp config/monitor.pairs.example.yaml config/monitor.pairs.yaml
+cp config/monitor.notifiers.example.yaml config/monitor.notifiers.yaml
 python3 -m venv .venv
 . .venv/bin/activate
 python -m pip install --upgrade pip
@@ -44,11 +48,11 @@ python -m pip install -e ".[tqsdk,parquet]"
 python -m pip install -e .
 ```
 
-`config/monitor.yaml` 默认会引用仓库内的 [domestic_trading_calendar.cn_futures.2026.yaml](/Users/m2/Desktop/Codex2026/cross_market_arbitrage/config/domestic_trading_calendar.cn_futures.2026.yaml)；如果跨年部署，记得同步更新这份交易日历文件。
+`config/monitor.yaml` 默认会通过 `imports` 加载 `config/monitor.app.yaml`、`config/monitor.sources.yaml`、`config/monitor.pairs.yaml`、`config/monitor.notifiers.yaml`，并引用仓库内的 [domestic_trading_calendar.cn_futures.2026.yaml](/Users/m2/Desktop/Codex2026/cross_market_arbitrage/config/domestic_trading_calendar.cn_futures.2026.yaml)；如果跨年部署，记得同步更新这份交易日历文件。
 
 ## 3. 配置 TqSdk 认证
 
-如果线上需要 `TqSdk`，直接编辑仓库内 `config/monitor.yaml`：
+如果线上需要 `TqSdk`，直接编辑仓库内 `config/monitor.sources.yaml`：
 
 - `sources.tqsdk_domestic.params.auth_user`
 - `sources.tqsdk_domestic.params.auth_password`

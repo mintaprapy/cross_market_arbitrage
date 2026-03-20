@@ -41,6 +41,10 @@ cd /srv
 git clone https://github.com/mintaprapy/cross_market_arbitrage.git
 cd /srv/cross_market_arbitrage
 cp config/monitor.example.yaml config/monitor.yaml
+cp config/monitor.app.example.yaml config/monitor.app.yaml
+cp config/monitor.sources.example.yaml config/monitor.sources.yaml
+cp config/monitor.pairs.example.yaml config/monitor.pairs.yaml
+cp config/monitor.notifiers.example.yaml config/monitor.notifiers.yaml
 ```
 
 3. 创建虚拟环境并安装依赖
@@ -65,17 +69,19 @@ python -m pip install -e ".[tqsdk]"
 
 ```bash
 editor config/monitor.yaml
+editor config/monitor.app.yaml
+editor config/monitor.sources.yaml
+editor config/monitor.pairs.yaml
+editor config/monitor.notifiers.yaml
 ```
 
 至少确认这些字段：
 
-- `app.sqlite_path`
-- `app.export_dir`
-- `app.domestic_trading_calendar_path`
-- `notifiers`
-- `sources.tqsdk_domestic.params.auth_user`
-- `sources.tqsdk_domestic.params.auth_password`
-- `sources.tqsdk_domestic.params.md_url`（如需要）
+- `config/monitor.app.yaml` 里的 `sqlite_path / export_dir / domestic_trading_calendar_path`
+- `config/monitor.sources.yaml` 里的 `sources.tqsdk_domestic.params.auth_user`
+- `config/monitor.sources.yaml` 里的 `sources.tqsdk_domestic.params.auth_password`
+- `config/monitor.sources.yaml` 里的 `sources.tqsdk_domestic.params.md_url`（如需要）
+- `config/monitor.notifiers.yaml` 里的通知渠道配置
 
 5. 执行安装脚本
 
@@ -168,34 +174,44 @@ cross_market_monitor/
 仓库跟踪的是公开示例配置：
 
 - [config/monitor.example.yaml](/Users/m2/Desktop/Codex2026/cross_market_arbitrage/config/monitor.example.yaml)
+- [config/monitor.app.example.yaml](/Users/m2/Desktop/Codex2026/cross_market_arbitrage/config/monitor.app.example.yaml)
+- [config/monitor.sources.example.yaml](/Users/m2/Desktop/Codex2026/cross_market_arbitrage/config/monitor.sources.example.yaml)
+- [config/monitor.pairs.example.yaml](/Users/m2/Desktop/Codex2026/cross_market_arbitrage/config/monitor.pairs.example.yaml)
+- [config/monitor.notifiers.example.yaml](/Users/m2/Desktop/Codex2026/cross_market_arbitrage/config/monitor.notifiers.example.yaml)
 - [config/domestic_trading_calendar.cn_futures.2026.yaml](/Users/m2/Desktop/Codex2026/cross_market_arbitrage/config/domestic_trading_calendar.cn_futures.2026.yaml)
 
 本地实际运行使用：
 
 - `config/monitor.yaml`
+- `config/monitor.app.yaml`
+- `config/monitor.sources.yaml`
+- `config/monitor.pairs.yaml`
+- `config/monitor.notifiers.yaml`
 
 首次拉代码后先复制一份本地配置：
 
 ```bash
 cp config/monitor.example.yaml config/monitor.yaml
+cp config/monitor.app.example.yaml config/monitor.app.yaml
+cp config/monitor.sources.example.yaml config/monitor.sources.yaml
+cp config/monitor.pairs.example.yaml config/monitor.pairs.yaml
+cp config/monitor.notifiers.example.yaml config/monitor.notifiers.yaml
 ```
 
-`config/monitor.yaml` 已加入 `.gitignore`，用于保留本地凭证、通知地址和运行参数，不会上传到 GitHub。
+这些本地文件都已加入 `.gitignore`，用于保留本地凭证、通知地址和运行参数，不会上传到 GitHub。
 
-配置里已经包含：
+配置现在拆成 5 份：
 
-- 主国内链路配置和海外候选 `overseas_candidates`
-- 国内周末/节假日休市日历，通过 `domestic_trading_calendar_path` 引用
-- `domestic_product_code`，用于映射 TqSdk 主连代码
-- FX 跳变阈值与暂停开关
-- 每个交易对单独的通知阈值：
-  - `spread_alert_above`
-  - `spread_alert_below`
-- 每组成本模型参数
-- TqSdk 影子采集与启动回补参数
-- 通知器模板与过滤器：
-  - `categories`
-  - `group_names`
+- `config/monitor.yaml`
+  只作为入口文件，列出 `imports`
+- `config/monitor.app.yaml`
+  负责应用级参数、SQLite、导出目录、轮询周期、交易日历
+- `config/monitor.sources.yaml`
+  负责各数据源、HTTP 参数、TqSdk 认证
+- `config/monitor.pairs.yaml`
+  负责交易对、路由、阈值、成本模型
+- `config/monitor.notifiers.yaml`
+  负责通知渠道和过滤规则
 
 ## 运行
 
@@ -229,7 +245,7 @@ python3 -m cross_market_monitor.main run-worker
 python3 -m cross_market_monitor.main run-api
 ```
 
-如果要启用 `TqSdk` 启动回补和历史回补，直接在 `config/monitor.yaml` 里填写：
+如果要启用 `TqSdk` 启动回补和历史回补，直接在 `config/monitor.sources.yaml` 里填写：
 
 ```yaml
 sources:
@@ -325,6 +341,11 @@ notifiers:
 
 ```bash
 cd /srv/cross_market_arbitrage
+cp config/monitor.example.yaml config/monitor.yaml
+cp config/monitor.app.example.yaml config/monitor.app.yaml
+cp config/monitor.sources.example.yaml config/monitor.sources.yaml
+cp config/monitor.pairs.example.yaml config/monitor.pairs.yaml
+cp config/monitor.notifiers.example.yaml config/monitor.notifiers.yaml
 python3 -m venv .venv
 . .venv/bin/activate
 python -m pip install --upgrade pip
@@ -339,7 +360,7 @@ sudo ./deploy/bin/post-deploy-check.sh
 python -m pip install -e .
 ```
 
-`install-ubuntu.sh` 会自动按本地 [config/monitor.yaml](/Users/m2/Desktop/Codex2026/cross_market_arbitrage/config/monitor.yaml) 渲染 systemd unit 里的配置路径、监听地址和 SQLite / export 目录。
+`install-ubuntu.sh` 会自动读取本地 [config/monitor.yaml](/Users/m2/Desktop/Codex2026/cross_market_arbitrage/config/monitor.yaml)，再跟随 `imports` 加载拆分后的配置文件，并据此渲染 systemd unit 里的配置路径、监听地址和 SQLite / export 目录。
 
 查看日志：
 
@@ -377,17 +398,16 @@ python -m pip install -e .
 - 先执行：
 ```bash
 cp config/monitor.example.yaml config/monitor.yaml
+cp config/monitor.app.example.yaml config/monitor.app.yaml
+cp config/monitor.sources.example.yaml config/monitor.sources.yaml
+cp config/monitor.pairs.example.yaml config/monitor.pairs.yaml
+cp config/monitor.notifiers.example.yaml config/monitor.notifiers.yaml
 ```
-- 再检查本地 [config/monitor.yaml](/Users/m2/Desktop/Codex2026/cross_market_arbitrage/config/monitor.yaml) 中的：
-  - `sqlite_path`
-  - `export_dir`
-  - `domestic_trading_calendar_path`
-  - `notifiers`
-  - 每个交易对的 `spread_alert_above / spread_alert_below`
-- 如果线上启用 `TqSdk`，确认 `config/monitor.yaml` 已填：
-  - `sources.tqsdk_domestic.params.auth_user`
-  - `sources.tqsdk_domestic.params.auth_password`
-  - `sources.tqsdk_domestic.params.md_url`
+- 再检查本地配置：
+  - [config/monitor.app.yaml](/Users/m2/Desktop/Codex2026/cross_market_arbitrage/config/monitor.app.yaml)
+  - [config/monitor.sources.yaml](/Users/m2/Desktop/Codex2026/cross_market_arbitrage/config/monitor.sources.yaml)
+  - [config/monitor.pairs.yaml](/Users/m2/Desktop/Codex2026/cross_market_arbitrage/config/monitor.pairs.yaml)
+  - [config/monitor.notifiers.yaml](/Users/m2/Desktop/Codex2026/cross_market_arbitrage/config/monitor.notifiers.yaml)
 
 4. systemd
 ```bash

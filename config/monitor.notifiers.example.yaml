@@ -1,0 +1,36 @@
+notifiers:
+  - name: console_alerts
+    kind: console
+    enabled: true
+    min_severity: warning
+
+  - name: webhook_alerts
+    kind: webhook
+    enabled: false
+    min_severity: critical
+    url: http://127.0.0.1:9000/alerts
+    timeout_sec: 5
+
+  - name: feishu_alerts
+    kind: feishu
+    enabled: false
+    min_severity: warning
+    categories: [spread_level]
+    url: https://open.feishu.cn/open-apis/bot/v2/hook/replace-me
+    timeout_sec: 5
+
+  - name: wecom_alerts
+    kind: wecom
+    enabled: false
+    min_severity: critical
+    url: https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=replace-me
+    timeout_sec: 5
+
+  - name: telegram_alerts
+    kind: telegram
+    enabled: false
+    min_severity: warning
+    categories: [spread_level]
+    bot_token: replace-me
+    chat_id: replace-me
+    timeout_sec: 5

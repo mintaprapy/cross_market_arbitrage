@@ -9,7 +9,7 @@ from cross_market_monitor.domain.models import MonitorConfig
 
 def load_config(path: str | Path) -> MonitorConfig:
     config_path = Path(path).resolve()
-    raw = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    raw = _load_raw_config(config_path)
     raw = _merge_trading_calendar(raw, config_path)
     config = MonitorConfig.model_validate(raw)
 
@@ -33,6 +33,46 @@ def load_config(path: str | Path) -> MonitorConfig:
         config = config.model_copy(update={"app": app_config})
 
     return config
+
+
+def _load_raw_config(config_path: Path, active_paths: set[Path] | None = None) -> dict:
+    active = active_paths or set()
+    if config_path in active:
+        raise ValueError(f"Config import cycle detected at {config_path}")
+
+    active.add(config_path)
+    try:
+        raw = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+        if not isinstance(raw, dict):
+            raise ValueError(f"Config file must contain a mapping: {config_path}")
+
+        imports = raw.pop("imports", []) or []
+        if not isinstance(imports, list):
+            raise ValueError(f"'imports' must be a list in {config_path}")
+
+        payload: dict = {}
+        for item in imports:
+            if not isinstance(item, str):
+                raise ValueError(f"Config import entries must be strings in {config_path}")
+            import_path = Path(item)
+            if not import_path.is_absolute():
+                import_path = (config_path.parent / import_path).resolve()
+            imported = _load_raw_config(import_path, active)
+            payload = _deep_merge(payload, imported)
+
+        return _deep_merge(payload, raw)
+    finally:
+        active.remove(config_path)
+
+
+def _deep_merge(base: dict, override: dict) -> dict:
+    merged = dict(base)
+    for key, value in override.items():
+        if isinstance(value, dict) and isinstance(merged.get(key), dict):
+            merged[key] = _deep_merge(merged[key], value)
+        else:
+            merged[key] = value
+    return merged
 
 
 def _merge_trading_calendar(raw: dict | None, config_path: Path) -> dict:

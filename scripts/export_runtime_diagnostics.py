@@ -157,7 +157,7 @@ def copy_optional_file(src: Path, dst: Path) -> None:
 
 def iter_import_paths(config_path: Path) -> list[Path]:
     raw = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
-    imports = raw.get("imports") or []
+    imports = list(raw.get("imports") or []) + list(raw.get("optional_imports") or [])
     paths: list[Path] = []
     for item in imports:
         if not isinstance(item, str):
@@ -165,16 +165,16 @@ def iter_import_paths(config_path: Path) -> list[Path]:
         import_path = Path(item)
         if not import_path.is_absolute():
             import_path = (config_path.parent / import_path).resolve()
-        paths.append(import_path)
+        if import_path.exists():
+            paths.append(import_path)
     return paths
 
 
 def collect_repo_artifacts(output_dir: Path, config_path: Path, config) -> None:
     copy_optional_file(config_path, output_dir / "monitor.yaml")
-    copy_optional_file(ROOT / "config" / "monitor.example.yaml", output_dir / "monitor.example.yaml")
     for imported_path in iter_import_paths(config_path):
         copy_optional_file(imported_path, output_dir / imported_path.name)
-    for example_path in sorted((ROOT / "config").glob("monitor.*.example.yaml")):
+    for example_path in sorted((ROOT / "config").glob("monitor*.example.yaml")):
         copy_optional_file(example_path, output_dir / example_path.name)
     if config.app.domestic_trading_calendar_path:
         copy_optional_file(Path(config.app.domestic_trading_calendar_path), output_dir / Path(config.app.domestic_trading_calendar_path).name)

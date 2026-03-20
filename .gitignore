@@ -10,11 +10,6 @@ __pycache__/
 .env.*
 !.env.example
 
-config/monitor.yaml
-config/monitor.app.yaml
-config/monitor.sources.yaml
-config/monitor.pairs.yaml
-config/monitor.notifiers.yaml
 config/*.local.yaml
 
 data/

@@ -1,0 +1,5 @@
+notifiers:
+  - name: console_alerts
+    kind: console
+    enabled: true
+    min_severity: warning

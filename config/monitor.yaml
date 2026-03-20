@@ -3,3 +3,6 @@ imports:
   - monitor.sources.yaml
   - monitor.pairs.yaml
   - monitor.notifiers.yaml
+optional_imports:
+  - monitor.secrets.local.yaml
+  - monitor.notifiers.local.yaml

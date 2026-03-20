@@ -95,6 +95,22 @@ class StaticFxAdapter:
         )
 
 
+class FixedTimestampFxAdapter:
+    def __init__(self, source_name: str, timestamp: datetime, rate: float) -> None:
+        self.source_name = source_name
+        self.timestamp = timestamp
+        self.rate = rate
+
+    def fetch_rate(self, base: str, quote: str) -> FXQuote:
+        return FXQuote(
+            source_name=self.source_name,
+            pair=f"{base}/{quote}",
+            ts=self.timestamp,
+            rate=self.rate,
+            raw_payload="fixed-ts",
+        )
+
+
 class HistoryCapableFxAdapter:
     def __init__(self, source_name: str = "fx_history", rate: float = 7.0) -> None:
         self.source_name = source_name
@@ -1546,7 +1562,7 @@ class MonitorServiceTests(unittest.TestCase):
             service = MonitorService(config, repository)
             service.adapters["domestic"] = FixedTimestampQuoteAdapter("domestic", now_ts, 101.0, 100.9, 101.1)
             service.adapters["overseas"] = StaticQuoteAdapter("overseas", 5100.0, 5099.0, 5101.0)
-            service.adapters["fx"] = StaticFxAdapter("fx", 7.2)
+            service.adapters["fx"] = FixedTimestampFxAdapter("fx", now_ts, 7.2)
 
             with mock.patch("cross_market_monitor.application.common.utc_now", return_value=now_ts):
                 with mock.patch("cross_market_monitor.application.monitor.snapshot_builder.utc_now", return_value=now_ts):
@@ -1624,7 +1640,7 @@ class MonitorServiceTests(unittest.TestCase):
             service = MonitorService(config, repository)
             service.adapters["domestic"] = FixedTimestampQuoteAdapter("domestic", now_ts, 101.0, 100.9, 101.1)
             service.adapters["overseas"] = StaticQuoteAdapter("overseas", 5100.0, 5099.0, 5101.0)
-            service.adapters["fx"] = StaticFxAdapter("fx", 7.2)
+            service.adapters["fx"] = FixedTimestampFxAdapter("fx", now_ts, 7.2)
 
             with mock.patch("cross_market_monitor.application.common.utc_now", return_value=now_ts):
                 with mock.patch("cross_market_monitor.application.monitor.snapshot_builder.utc_now", return_value=now_ts):
@@ -1702,7 +1718,7 @@ class MonitorServiceTests(unittest.TestCase):
             service = MonitorService(config, repository)
             service.adapters["domestic"] = FixedTimestampQuoteAdapter("domestic", now_ts, 101.0, 100.9, 101.1)
             service.adapters["overseas"] = StaticQuoteAdapter("overseas", 5100.0, 5099.0, 5101.0)
-            service.adapters["fx"] = StaticFxAdapter("fx", 7.2)
+            service.adapters["fx"] = FixedTimestampFxAdapter("fx", now_ts, 7.2)
 
             with mock.patch("cross_market_monitor.application.common.utc_now", return_value=now_ts):
                 with mock.patch("cross_market_monitor.application.monitor.snapshot_builder.utc_now", return_value=now_ts):
@@ -1760,7 +1776,7 @@ class MonitorServiceTests(unittest.TestCase):
             service = MonitorService(config, repository)
             service.adapters["domestic"] = FixedTimestampQuoteAdapter("domestic", domestic_ts, 100.0, 99.9, 100.1)
             service.adapters["overseas"] = StaticQuoteAdapter("overseas", 5100.0, 5099.0, 5101.0)
-            service.adapters["fx"] = StaticFxAdapter("fx", 7.2)
+            service.adapters["fx"] = FixedTimestampFxAdapter("fx", domestic_ts + timedelta(minutes=1), 7.2)
 
             asyncio.run(service.poll_once())
 

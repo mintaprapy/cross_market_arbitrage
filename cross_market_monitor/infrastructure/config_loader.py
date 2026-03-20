@@ -47,16 +47,17 @@ def _load_raw_config(config_path: Path, active_paths: set[Path] | None = None) -
             raise ValueError(f"Config file must contain a mapping: {config_path}")
 
         imports = raw.pop("imports", []) or []
+        optional_imports = raw.pop("optional_imports", []) or []
         if not isinstance(imports, list):
             raise ValueError(f"'imports' must be a list in {config_path}")
+        if not isinstance(optional_imports, list):
+            raise ValueError(f"'optional_imports' must be a list in {config_path}")
 
         payload: dict = {}
-        for item in imports:
-            if not isinstance(item, str):
-                raise ValueError(f"Config import entries must be strings in {config_path}")
-            import_path = Path(item)
-            if not import_path.is_absolute():
-                import_path = (config_path.parent / import_path).resolve()
+        for import_path in _resolve_imports(config_path, imports, required=True):
+            imported = _load_raw_config(import_path, active)
+            payload = _deep_merge(payload, imported)
+        for import_path in _resolve_imports(config_path, optional_imports, required=False):
             imported = _load_raw_config(import_path, active)
             payload = _deep_merge(payload, imported)
 
@@ -73,6 +74,22 @@ def _deep_merge(base: dict, override: dict) -> dict:
         else:
             merged[key] = value
     return merged
+
+
+def _resolve_imports(config_path: Path, values: list, *, required: bool) -> list[Path]:
+    paths: list[Path] = []
+    for item in values:
+        if not isinstance(item, str):
+            raise ValueError(f"Config import entries must be strings in {config_path}")
+        import_path = Path(item)
+        if not import_path.is_absolute():
+            import_path = (config_path.parent / import_path).resolve()
+        if not import_path.exists():
+            if required:
+                raise FileNotFoundError(import_path)
+            continue
+        paths.append(import_path)
+    return paths
 
 
 def _merge_trading_calendar(raw: dict | None, config_path: Path) -> dict:

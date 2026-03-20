@@ -20,8 +20,6 @@ sources:
     base_url: wss://free-api.shinnytech.com/t/nfmd/front/mobile
     verify_ssl: true
     params:
-      auth_user: ""
-      auth_password: ""
       md_url: wss://free-api.shinnytech.com/t/nfmd/front/mobile
       login_retry_attempts: "3"
       history_retry_attempts: "3"

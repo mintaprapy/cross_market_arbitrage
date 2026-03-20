@@ -40,11 +40,8 @@ sudo apt-get install -y git curl python3 python3-venv python3-pip nginx
 cd /srv
 git clone https://github.com/mintaprapy/cross_market_arbitrage.git
 cd /srv/cross_market_arbitrage
-cp config/monitor.example.yaml config/monitor.yaml
-cp config/monitor.app.example.yaml config/monitor.app.yaml
-cp config/monitor.sources.example.yaml config/monitor.sources.yaml
-cp config/monitor.pairs.example.yaml config/monitor.pairs.yaml
-cp config/monitor.notifiers.example.yaml config/monitor.notifiers.yaml
+cp config/monitor.secrets.local.example.yaml config/monitor.secrets.local.yaml
+cp config/monitor.notifiers.local.example.yaml config/monitor.notifiers.local.yaml
 ```
 
 3. 创建虚拟环境并安装依赖
@@ -72,16 +69,17 @@ editor config/monitor.yaml
 editor config/monitor.app.yaml
 editor config/monitor.sources.yaml
 editor config/monitor.pairs.yaml
-editor config/monitor.notifiers.yaml
+editor config/monitor.secrets.local.yaml
+editor config/monitor.notifiers.local.yaml
 ```
 
 至少确认这些字段：
 
 - `config/monitor.app.yaml` 里的 `sqlite_path / export_dir / domestic_trading_calendar_path`
-- `config/monitor.sources.yaml` 里的 `sources.tqsdk_domestic.params.auth_user`
-- `config/monitor.sources.yaml` 里的 `sources.tqsdk_domestic.params.auth_password`
-- `config/monitor.sources.yaml` 里的 `sources.tqsdk_domestic.params.md_url`（如需要）
-- `config/monitor.notifiers.yaml` 里的通知渠道配置
+- `config/monitor.secrets.local.yaml` 里的 `sources.tqsdk_domestic.params.auth_user`
+- `config/monitor.secrets.local.yaml` 里的 `sources.tqsdk_domestic.params.auth_password`
+- `config/monitor.secrets.local.yaml` 里的 `sources.tqsdk_domestic.params.md_url`（如需要）
+- `config/monitor.notifiers.local.yaml` 里的通知渠道配置
 
 5. 执行安装脚本
 
@@ -141,7 +139,7 @@ curl -fsS http://127.0.0.1:6080/api/snapshot | python3 -m json.tool | head
 - 数据质量告警：断流、时间戳过旧、时间偏斜、非正价格
 - 每个交易对可单独配置价差上限通知和价差下限通知
 - 多候选海外路由回退和源健康统计
-- TqSdk 启动回补和影子主连采集
+- TqSdk 国内历史回补
 - Binance / OKX 同源海外历史回补
 - SQLite 落库：原始行情、汇率、快照、告警、通知投递
 - CSV / Parquet 导出
@@ -155,7 +153,7 @@ curl -fsS http://127.0.0.1:6080/api/snapshot | python3 -m json.tool | head
 cross_market_monitor/
 ├── application/
 │   ├── monitor/     # 轮询、FX、快照、告警、运行时
-│   ├── history/     # 历史查询、回补、shadow
+│   ├── history/     # 历史查询、回补、可选 shadow
 │   ├── control/     # 路由偏好
 │   └── query/       # 查询与回放
 ├── domain/          # 领域模型、换算公式、滚动统计
@@ -171,14 +169,19 @@ cross_market_monitor/
 
 ## 配置
 
-仓库跟踪的是公开示例配置：
+仓库跟踪的是这些真实配置文件：
 
-- [config/monitor.example.yaml](/Users/m2/Desktop/Codex2026/cross_market_arbitrage/config/monitor.example.yaml)
-- [config/monitor.app.example.yaml](/Users/m2/Desktop/Codex2026/cross_market_arbitrage/config/monitor.app.example.yaml)
-- [config/monitor.sources.example.yaml](/Users/m2/Desktop/Codex2026/cross_market_arbitrage/config/monitor.sources.example.yaml)
-- [config/monitor.pairs.example.yaml](/Users/m2/Desktop/Codex2026/cross_market_arbitrage/config/monitor.pairs.example.yaml)
-- [config/monitor.notifiers.example.yaml](/Users/m2/Desktop/Codex2026/cross_market_arbitrage/config/monitor.notifiers.example.yaml)
+- [config/monitor.yaml](/Users/m2/Desktop/Codex2026/cross_market_arbitrage/config/monitor.yaml)
+- [config/monitor.app.yaml](/Users/m2/Desktop/Codex2026/cross_market_arbitrage/config/monitor.app.yaml)
+- [config/monitor.sources.yaml](/Users/m2/Desktop/Codex2026/cross_market_arbitrage/config/monitor.sources.yaml)
+- [config/monitor.pairs.yaml](/Users/m2/Desktop/Codex2026/cross_market_arbitrage/config/monitor.pairs.yaml)
+- [config/monitor.notifiers.yaml](/Users/m2/Desktop/Codex2026/cross_market_arbitrage/config/monitor.notifiers.yaml)
 - [config/domestic_trading_calendar.cn_futures.2026.yaml](/Users/m2/Desktop/Codex2026/cross_market_arbitrage/config/domestic_trading_calendar.cn_futures.2026.yaml)
+
+仅敏感本地覆盖保留 example：
+
+- [config/monitor.secrets.local.example.yaml](/Users/m2/Desktop/Codex2026/cross_market_arbitrage/config/monitor.secrets.local.example.yaml)
+- [config/monitor.notifiers.local.example.yaml](/Users/m2/Desktop/Codex2026/cross_market_arbitrage/config/monitor.notifiers.local.example.yaml)
 
 本地实际运行使用：
 
@@ -187,18 +190,17 @@ cross_market_monitor/
 - `config/monitor.sources.yaml`
 - `config/monitor.pairs.yaml`
 - `config/monitor.notifiers.yaml`
+- `config/monitor.secrets.local.yaml`
+- `config/monitor.notifiers.local.yaml`
 
-首次拉代码后先复制一份本地配置：
+首次拉代码后只需要按需复制敏感本地覆盖：
 
 ```bash
-cp config/monitor.example.yaml config/monitor.yaml
-cp config/monitor.app.example.yaml config/monitor.app.yaml
-cp config/monitor.sources.example.yaml config/monitor.sources.yaml
-cp config/monitor.pairs.example.yaml config/monitor.pairs.yaml
-cp config/monitor.notifiers.example.yaml config/monitor.notifiers.yaml
+cp config/monitor.secrets.local.example.yaml config/monitor.secrets.local.yaml
+cp config/monitor.notifiers.local.example.yaml config/monitor.notifiers.local.yaml
 ```
 
-这些本地文件都已加入 `.gitignore`，用于保留本地凭证、通知地址和运行参数，不会上传到 GitHub。
+只有 `*.local.yaml` 已加入 `.gitignore`，用于保留本地凭证、通知地址和运行参数，不会上传到 GitHub。
 
 配置现在拆成 5 份：
 
@@ -207,11 +209,15 @@ cp config/monitor.notifiers.example.yaml config/monitor.notifiers.yaml
 - `config/monitor.app.yaml`
   负责应用级参数、SQLite、导出目录、轮询周期、交易日历
 - `config/monitor.sources.yaml`
-  负责各数据源、HTTP 参数、TqSdk 认证
+  负责各数据源和非敏感连接参数
 - `config/monitor.pairs.yaml`
   负责交易对、路由、阈值、成本模型
 - `config/monitor.notifiers.yaml`
-  负责通知渠道和过滤规则
+  负责非敏感默认通知配置
+- `config/monitor.secrets.local.yaml`
+  负责本地敏感凭证覆盖，比如 `TqSdk` 账号密码
+- `config/monitor.notifiers.local.yaml`
+  负责本地敏感通知渠道覆盖，比如飞书/Telegram/Webhook 连接信息
 
 ## 运行
 
@@ -245,7 +251,7 @@ python3 -m cross_market_monitor.main run-worker
 python3 -m cross_market_monitor.main run-api
 ```
 
-如果要启用 `TqSdk` 启动回补和历史回补，直接在 `config/monitor.sources.yaml` 里填写：
+如果要启用 `TqSdk` 启动回补和历史回补，直接在 `config/monitor.secrets.local.yaml` 里填写：
 
 ```yaml
 sources:
@@ -341,11 +347,8 @@ notifiers:
 
 ```bash
 cd /srv/cross_market_arbitrage
-cp config/monitor.example.yaml config/monitor.yaml
-cp config/monitor.app.example.yaml config/monitor.app.yaml
-cp config/monitor.sources.example.yaml config/monitor.sources.yaml
-cp config/monitor.pairs.example.yaml config/monitor.pairs.yaml
-cp config/monitor.notifiers.example.yaml config/monitor.notifiers.yaml
+cp config/monitor.secrets.local.example.yaml config/monitor.secrets.local.yaml
+cp config/monitor.notifiers.local.example.yaml config/monitor.notifiers.local.yaml
 python3 -m venv .venv
 . .venv/bin/activate
 python -m pip install --upgrade pip
@@ -354,7 +357,7 @@ sudo ./deploy/bin/install-ubuntu.sh
 sudo ./deploy/bin/post-deploy-check.sh
 ```
 
-如果不需要 `TqSdk` 影子链路和 `Parquet` 导出，也可以把安装命令改成：
+如果不需要 `TqSdk` 历史回补和 `Parquet` 导出，也可以把安装命令改成：
 
 ```bash
 python -m pip install -e .
@@ -397,17 +400,16 @@ python -m pip install -e .
 3. 配置文件
 - 先执行：
 ```bash
-cp config/monitor.example.yaml config/monitor.yaml
-cp config/monitor.app.example.yaml config/monitor.app.yaml
-cp config/monitor.sources.example.yaml config/monitor.sources.yaml
-cp config/monitor.pairs.example.yaml config/monitor.pairs.yaml
-cp config/monitor.notifiers.example.yaml config/monitor.notifiers.yaml
+cp config/monitor.secrets.local.example.yaml config/monitor.secrets.local.yaml
+cp config/monitor.notifiers.local.example.yaml config/monitor.notifiers.local.yaml
 ```
 - 再检查本地配置：
   - [config/monitor.app.yaml](/Users/m2/Desktop/Codex2026/cross_market_arbitrage/config/monitor.app.yaml)
   - [config/monitor.sources.yaml](/Users/m2/Desktop/Codex2026/cross_market_arbitrage/config/monitor.sources.yaml)
   - [config/monitor.pairs.yaml](/Users/m2/Desktop/Codex2026/cross_market_arbitrage/config/monitor.pairs.yaml)
   - [config/monitor.notifiers.yaml](/Users/m2/Desktop/Codex2026/cross_market_arbitrage/config/monitor.notifiers.yaml)
+  - [config/monitor.secrets.local.yaml](/Users/m2/Desktop/Codex2026/cross_market_arbitrage/config/monitor.secrets.local.yaml)
+  - [config/monitor.notifiers.local.yaml](/Users/m2/Desktop/Codex2026/cross_market_arbitrage/config/monitor.notifiers.local.yaml)
 
 4. systemd
 ```bash
@@ -607,7 +609,7 @@ python3 -m unittest discover -s tests -v
 - `BC_COPPER` 单独成组，便于和 `CU` 对比。
 - `SC_CL` 默认按扩散/收敛监控处理，不假设零均值强收敛。
 - 国内主链路固定为主连，页面不再切换到具体合约。
-- 启动时会尝试用 TqSdk 回补一段国内主连影子历史，并在后台持续采集影子主连数据；这部分数据不参与主价差。
+- 默认会用 TqSdk 做国内历史回补；如需影子链路，需要显式开启对应配置。
 - 页面上可以直接切换海外比较源，例如 `Binance / OKX / CME参考`；待命路由在手动锁定后会被优先尝试。
 - 图表历史读取时，如果当前选中的 `Binance / OKX` 海外数据在本地库里不够，会自动按当前海外源做一次同源历史回补并缓存到本地。
 - 国内市场休市或午间停盘时，快照可能被判为 `stale`，这是时间对齐保护而不是程序错误。

@@ -1,0 +1,168 @@
+Mac mini 本地长跑观察清单
+
+适用环境：
+
+- 安装目录：/Users/m2/opt/cross_market_arbitrage
+- 启动方式：nohup 后台运行
+- 服务地址：http://127.0.0.1:6080/
+
+一、今晚启动后立刻检查
+
+1. 确认进程存在
+
+ps -p "$(cat /Users/m2/opt/cross_market_arbitrage/logs/runtime.pid)" -o pid,etime,command
+
+2. 确认端口监听
+
+lsof -iTCP:6080 -sTCP:LISTEN -n -P
+
+3. 确认健康接口可用
+
+curl -fsS http://127.0.0.1:6080/api/health | python3 -m json.tool
+
+4. 确认页面可打开
+
+- 浏览器打开：http://127.0.0.1:6080/
+
+5. 观察日志是否已经进入正常轮询
+
+tail -f /Users/m2/opt/cross_market_arbitrage/logs/runtime.log
+
+重点看是否出现：
+
+- Application startup complete.
+- GET /api/health 200 OK
+- 没有连续异常堆栈
+
+二、今晚重点观察的内容
+
+1. 国内实时是否持续成功
+
+看 /api/health 里的：
+
+- sina_domestic.success_count
+- sina_domestic.failure_count
+- sina_domestic.last_error
+
+理想状态：
+
+- success_count 持续增长
+- failure_count 不持续快速增长
+- last_error 为空
+
+2. 汇率是否稳定
+
+看 /api/health 里的：
+
+- latest_fx_source
+- latest_fx_rate
+- fx_is_live
+- sina_fx.success_count
+- frankfurter.success_count
+
+理想状态：
+
+- fx_is_live = true
+- 优先使用 sina_fx
+- 若 sina_fx 偶发失败，frankfurter 能接住
+
+3. 页面图表是否正常补历史
+
+重点点开：
+
+- AU_XAU
+- AG_XAG_GROSS
+- CU_COPPER_GROSS
+- SC_CL
+
+观察：
+
+- 24h / 7d / 30d 切换是否有数据
+- 图表是否避开国内休盘时段
+- 开盘点是否只在开盘时跳变
+
+4. 长时间运行后是否还在持续写入
+
+隔一段时间执行一次：
+
+curl -fsS http://127.0.0.1:6080/api/health | python3 -m json.tool
+
+重点看：
+
+- total_cycles 是否持续增加
+- last_poll_finished_at 是否持续推进
+
+三、明早开盘前后重点观察
+
+1. 开盘前
+
+确认当前状态大多是 stale，这是正常的。
+
+2. 开盘后 1 到 3 分钟
+
+重点看：
+
+- AU_XAU
+- AG_XAG_GROSS / AG_XAG_NET
+- CU_COPPER_GROSS / CU_COPPER_NET
+- BC_COPPER
+- SC_CL
+
+检查项：
+
+- 状态是否从 stale 切回 ok
+- 国内最新价是否开始更新
+- 换算价是否跟随新的国内价和新的 FX 更新
+- 图表在开盘点是否恢复连续
+
+3. 税前税后配对检查
+
+重点看：
+
+- AG_XAG_GROSS 和 AG_XAG_NET 的海外最新价是否一致
+- CU_COPPER_GROSS 和 CU_COPPER_NET 的海外最新价是否一致
+
+四、如果发现异常，优先保留这些信息
+
+1. 导出最近日志
+
+tail -n 300 /Users/m2/opt/cross_market_arbitrage/logs/runtime.log
+
+2. 保存健康状态
+
+curl -fsS http://127.0.0.1:6080/api/health | python3 -m json.tool
+
+3. 保存摘要
+
+curl -fsS http://127.0.0.1:6080/api/snapshot | python3 -m json.tool > /Users/m2/opt/cross_market_arbitrage/logs/snapshot_debug.json
+
+4. 如需完整诊断包
+
+cd /Users/m2/opt/cross_market_arbitrage
+python3 scripts/export_runtime_diagnostics.py --hours 12
+
+五、明早给我时，最好带这几项
+
+- /api/health 输出
+- runtime.log 最后 200 行
+- 哪些交易组正常，哪些不正常
+- 是图表异常、实时异常，还是历史异常
+- 异常大概发生的北京时间
+
+六、快速判断标准
+
+可以继续跑：
+
+- 进程还在
+- /api/health 正常
+- total_cycles 持续增长
+- sina_domestic 大多数时间成功
+- 页面能打开，卡片和图表有数据
+
+需要停下来排查：
+
+- 进程消失
+- 6080 不再监听
+- /api/health 超时
+- 日志里持续刷同类异常
+- 开盘后国内实时仍长期不更新

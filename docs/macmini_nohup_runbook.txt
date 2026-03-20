@@ -39,9 +39,31 @@ cp config/monitor.notifiers.local.example.yaml config/monitor.notifiers.local.ya
 
 - 0.0.0.0
 
+脚本位置：
+
+- /Users/m2/opt/cross_market_arbitrage/scripts/start_macmini.sh
+- /Users/m2/opt/cross_market_arbitrage/scripts/stop_macmini.sh
+
 3. 后台启动
 
-仅本机访问：
+推荐方式：
+
+cd /Users/m2/opt/cross_market_arbitrage
+./scripts/start_macmini.sh
+
+局域网访问：
+
+cd /Users/m2/opt/cross_market_arbitrage
+BIND_HOST=0.0.0.0 BIND_PORT=6080 ./scripts/start_macmini.sh
+
+说明：
+
+- 启动脚本会先 git pull 最新代码
+- 然后执行 pip install -e ".[tqsdk,parquet]"
+- 最后用 nohup 后台启动
+- 默认监听 127.0.0.1:6080
+
+如果你仍然想手工启动，备用命令如下：
 
 cd /Users/m2/opt/cross_market_arbitrage
 mkdir -p logs
@@ -53,25 +75,10 @@ nohup /Users/m2/opt/cross_market_arbitrage/.venv/bin/python \
   -m cross_market_monitor.main \
   --config /Users/m2/opt/cross_market_arbitrage/config/monitor.yaml \
   serve --host 127.0.0.1 --port 6080 \
-  > "$log" 2>&1 &
+  </dev/null > "$log" 2>&1 &
 
 echo $! > /Users/m2/opt/cross_market_arbitrage/logs/runtime.pid
-
-局域网访问：
-
-cd /Users/m2/opt/cross_market_arbitrage
-mkdir -p logs
-ts=$(date +%Y%m%d_%H%M%S)
-log="/Users/m2/opt/cross_market_arbitrage/logs/runtime_${ts}.log"
-ln -sfn "$log" /Users/m2/opt/cross_market_arbitrage/logs/runtime_latest.log
-
-nohup /Users/m2/opt/cross_market_arbitrage/.venv/bin/python \
-  -m cross_market_monitor.main \
-  --config /Users/m2/opt/cross_market_arbitrage/config/monitor.yaml \
-  serve --host 0.0.0.0 --port 6080 \
-  > "$log" 2>&1 &
-
-echo $! > /Users/m2/opt/cross_market_arbitrage/logs/runtime.pid
+disown
 
 4. 运行检查
 
@@ -94,7 +101,12 @@ curl -fsS http://127.0.0.1:6080/api/health | python3 -m json.tool
 
 5. 停止
 
-优先按 PID 停止：
+推荐方式：
+
+cd /Users/m2/opt/cross_market_arbitrage
+./scripts/stop_macmini.sh
+
+备用方式：
 
 kill "$(cat /Users/m2/opt/cross_market_arbitrage/logs/runtime.pid)"
 rm -f /Users/m2/opt/cross_market_arbitrage/logs/runtime.pid
@@ -105,44 +117,35 @@ pkill -f 'cross_market_monitor.main --config /Users/m2/opt/cross_market_arbitrag
 
 6. 重启
 
-kill "$(cat /Users/m2/opt/cross_market_arbitrage/logs/runtime.pid)" || true
-rm -f /Users/m2/opt/cross_market_arbitrage/logs/runtime.pid
+推荐方式：
 
 cd /Users/m2/opt/cross_market_arbitrage
-ts=$(date +%Y%m%d_%H%M%S)
-log="/Users/m2/opt/cross_market_arbitrage/logs/runtime_${ts}.log"
-ln -sfn "$log" /Users/m2/opt/cross_market_arbitrage/logs/runtime_latest.log
+./scripts/stop_macmini.sh
+./scripts/start_macmini.sh
 
-nohup /Users/m2/opt/cross_market_arbitrage/.venv/bin/python \
-  -m cross_market_monitor.main \
-  --config /Users/m2/opt/cross_market_arbitrage/config/monitor.yaml \
-  serve --host 127.0.0.1 --port 6080 \
-  > "$log" 2>&1 &
+局域网访问版本：
 
-echo $! > /Users/m2/opt/cross_market_arbitrage/logs/runtime.pid
+cd /Users/m2/opt/cross_market_arbitrage
+./scripts/stop_macmini.sh
+BIND_HOST=0.0.0.0 BIND_PORT=6080 ./scripts/start_macmini.sh
 
-如果你本来跑的是局域网版本，重启时把 127.0.0.1 改回 0.0.0.0。
+备用方式：
+
+- 继续使用第 3 节的手工 nohup 命令
 
 7. 更新代码后重启
 
+推荐方式：
+
 cd /Users/m2/opt/cross_market_arbitrage
-git pull --ff-only origin main
-/Users/m2/opt/cross_market_arbitrage/.venv/bin/python -m pip install -e ".[tqsdk,parquet]"
+./scripts/start_macmini.sh
 
-kill "$(cat /Users/m2/opt/cross_market_arbitrage/logs/runtime.pid)" || true
-rm -f /Users/m2/opt/cross_market_arbitrage/logs/runtime.pid
+因为启动脚本本身已经包含：
 
-ts=$(date +%Y%m%d_%H%M%S)
-log="/Users/m2/opt/cross_market_arbitrage/logs/runtime_${ts}.log"
-ln -sfn "$log" /Users/m2/opt/cross_market_arbitrage/logs/runtime_latest.log
-
-nohup /Users/m2/opt/cross_market_arbitrage/.venv/bin/python \
-  -m cross_market_monitor.main \
-  --config /Users/m2/opt/cross_market_arbitrage/config/monitor.yaml \
-  serve --host 127.0.0.1 --port 6080 \
-  > "$log" 2>&1 &
-
-echo $! > /Users/m2/opt/cross_market_arbitrage/logs/runtime.pid
+- git pull --ff-only origin main
+- pip install -e ".[tqsdk,parquet]"
+- 停旧进程
+- 后台重启
 
 8. 建议
 

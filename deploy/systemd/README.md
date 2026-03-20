@@ -1,19 +1,17 @@
 # Ubuntu systemd 部署
 
-当前默认推荐双进程部署：
+当前默认推荐 funding 风格的单进程部署：
 
-- `cross-market-monitor-worker`
-  负责采集、计算、告警和写库
-- `cross-market-monitor-api`
-  负责 FastAPI、Dashboard、控制接口和历史回补入口，不跑主轮询
+- `cross-market-monitor`
+  负责轮询、计算、告警、写库、FastAPI 和 Dashboard
 
-旧的 `cross-market-monitor.service` 仍可用于单进程兼容部署，但不再是默认推荐方式。
+仓库内高级场景仍保留 worker/api 模板，但不再是默认推荐方式。
 
 默认约定：
 
 - 项目目录：`/srv/cross_market_arbitrage`
 - 虚拟环境：`/srv/cross_market_arbitrage/.venv`
-- systemd 环境文件：`/etc/default/cross-market-monitor`
+- 真实配置文件：`/srv/cross_market_arbitrage/config/monitor.yaml`
 - 监听地址：`127.0.0.1:6080`
 
 ## 1. 同步代码
@@ -50,24 +48,20 @@ python -m pip install -e .
 
 ## 3. 配置 TqSdk 认证
 
-```bash
-sudo cp deploy/systemd/cross-market-monitor.env.example /etc/default/cross-market-monitor
-sudo chmod 600 /etc/default/cross-market-monitor
-sudo editor /etc/default/cross-market-monitor
-```
+如果线上需要 `TqSdk`，直接编辑仓库内 `config/monitor.yaml`：
 
-如果线上不需要 TqSdk，可留空或直接不创建这个文件。
+- `sources.tqsdk_domestic.params.auth_user`
+- `sources.tqsdk_domestic.params.auth_password`
+- `sources.tqsdk_domestic.params.md_url`
 
 ## 4. 安装 systemd 服务
 
-推荐安装 worker + api 两个 unit：
+推荐安装单个 unit：
 
 ```bash
-sudo cp deploy/systemd/cross-market-monitor-worker.service /etc/systemd/system/cross-market-monitor-worker.service
-sudo cp deploy/systemd/cross-market-monitor-api.service /etc/systemd/system/cross-market-monitor-api.service
+sudo cp systemd/cross-market-monitor.service /etc/systemd/system/cross-market-monitor.service
 sudo systemctl daemon-reload
-sudo systemctl enable --now cross-market-monitor-worker
-sudo systemctl enable --now cross-market-monitor-api
+sudo systemctl enable --now cross-market-monitor
 ```
 
 如果你希望直接按仓库模板安装，可以执行：
@@ -88,29 +82,25 @@ sudo ./deploy/bin/install-ubuntu.sh
 查看状态：
 
 ```bash
-sudo systemctl status cross-market-monitor-worker
-sudo systemctl status cross-market-monitor-api
+sudo systemctl status cross-market-monitor
 ```
 
 重启：
 
 ```bash
-sudo systemctl restart cross-market-monitor-worker
-sudo systemctl restart cross-market-monitor-api
+sudo systemctl restart cross-market-monitor
 ```
 
 停止：
 
 ```bash
-sudo systemctl stop cross-market-monitor-worker
-sudo systemctl stop cross-market-monitor-api
+sudo systemctl stop cross-market-monitor
 ```
 
 查看日志：
 
 ```bash
-sudo journalctl -u cross-market-monitor-worker -f
-sudo journalctl -u cross-market-monitor-api -f
+sudo journalctl -u cross-market-monitor -f
 ```
 
 部署完成后，可以直接跑：
@@ -123,12 +113,9 @@ sudo ./deploy/bin/post-deploy-check.sh
 
 如果你不用安装脚本，而是手动复制 unit，那么当这些项发生变化时需要一起改：
 
-- `/etc/systemd/system/cross-market-monitor-worker.service` 里的 `WorkingDirectory`
-- `/etc/systemd/system/cross-market-monitor-worker.service` 里的 `ExecStart`
-- `/etc/systemd/system/cross-market-monitor-worker.service` 里的 `ReadWritePaths`
-- `/etc/systemd/system/cross-market-monitor-api.service` 里的 `WorkingDirectory`
-- `/etc/systemd/system/cross-market-monitor-api.service` 里的 `ExecStart`
-- `/etc/systemd/system/cross-market-monitor-api.service` 里的 `ReadWritePaths`
+- `/etc/systemd/system/cross-market-monitor.service` 里的 `WorkingDirectory`
+- `/etc/systemd/system/cross-market-monitor.service` 里的 `ExecStart`
+- `/etc/systemd/system/cross-market-monitor.service` 里的 `ReadWritePaths`
 - 如果用了反向代理，也同步改代理目标地址
 
 ## 7. 暴露方式

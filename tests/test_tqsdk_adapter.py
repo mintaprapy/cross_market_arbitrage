@@ -46,6 +46,22 @@ class TqSdkMainAdapterTests(unittest.TestCase):
         ):
             self.assertEqual(adapter._credentials(), ("env_user", "env_password"))
 
+    def test_md_url_prefers_config_over_environment(self) -> None:
+        adapter = TqSdkMainAdapter(
+            "tqsdk_domestic",
+            SourceConfig(
+                kind="tqsdk_main",
+                base_url="wss://base.invalid",
+                params={
+                    "md_url": "wss://config.invalid",
+                    "md_url_env": "TQSDK_MD_URL",
+                },
+            ),
+        )
+
+        with patch.dict(os.environ, {"TQSDK_MD_URL": "wss://env.invalid"}, clear=True):
+            self.assertEqual(adapter._md_url(), "wss://config.invalid")
+
     def test_create_api_retries_transient_login_errors(self) -> None:
         fake_api = object()
         adapter = TqSdkMainAdapter(

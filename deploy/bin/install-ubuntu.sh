@@ -14,11 +14,11 @@ APP_USER="${APP_USER:-${SUDO_USER:-ubuntu}}"
 APP_GROUP="${APP_GROUP:-}"
 VENV_DIR="${VENV_DIR:-${APP_DIR}/.venv}"
 CONFIG_PATH="${CONFIG_PATH:-${APP_DIR}/config/monitor.yaml}"
-ENV_FILE="${ENV_FILE:-/etc/default/cross-market-monitor}"
 SYSTEMD_DIR="${SYSTEMD_DIR:-/etc/systemd/system}"
 NGINX_AVAILABLE_DIR="${NGINX_AVAILABLE_DIR:-/etc/nginx/sites-available}"
 NGINX_ENABLED_DIR="${NGINX_ENABLED_DIR:-/etc/nginx/sites-enabled}"
 NGINX_SITE_NAME="${NGINX_SITE_NAME:-cross-market-monitor}"
+SERVICE_NAME="${SERVICE_NAME:-cross-market-monitor}"
 SERVER_NAME="${SERVER_NAME:-_}"
 API_HOST="${API_HOST:-}"
 API_PORT="${API_PORT:-}"
@@ -87,10 +87,6 @@ else
   run_as_app "cd '${APP_DIR}' && '${VENV_DIR}/bin/python' -m pip install -e ."
 fi
 
-if [[ ! -f "${ENV_FILE}" ]]; then
-  install -m 600 "${REPO_DIR}/deploy/systemd/cross-market-monitor.env.example" "${ENV_FILE}"
-fi
-
 mapfile -t config_values < <(
   "${VENV_DIR}/bin/python" - <<PY
 from pathlib import Path
@@ -119,20 +115,21 @@ render_unit() {
     -e "s|User=ubuntu|User=${APP_USER}|g" \
     -e "s|Group=ubuntu|Group=${APP_GROUP}|g" \
     -e "s|ReadWritePaths=/srv/cross_market_arbitrage/data /srv/cross_market_arbitrage/exports|ReadWritePaths=${WRITE_PATHS}|g" \
-    -e "s|run-api --host 127.0.0.1 --port 6080|run-api --host ${API_HOST} --port ${API_PORT}|g" \
+    -e "s|serve --host 127.0.0.1 --port 6080|serve --host ${API_HOST} --port ${API_PORT}|g" \
     "${source_file}" > "${target_file}"
 }
 
 render_unit \
-  "${REPO_DIR}/deploy/systemd/cross-market-monitor-worker.service" \
-  "${SYSTEMD_DIR}/cross-market-monitor-worker.service"
-render_unit \
-  "${REPO_DIR}/deploy/systemd/cross-market-monitor-api.service" \
-  "${SYSTEMD_DIR}/cross-market-monitor-api.service"
+  "${REPO_DIR}/systemd/cross-market-monitor.service" \
+  "${SYSTEMD_DIR}/${SERVICE_NAME}.service"
 
 systemctl daemon-reload
-systemctl enable --now cross-market-monitor-worker
-systemctl enable --now cross-market-monitor-api
+for legacy_service in cross-market-monitor-worker cross-market-monitor-api; do
+  if systemctl list-unit-files "${legacy_service}.service" --no-legend >/dev/null 2>&1; then
+    systemctl disable --now "${legacy_service}" >/dev/null 2>&1 || true
+  fi
+done
+systemctl enable --now "${SERVICE_NAME}"
 
 if [[ "${INSTALL_NGINX}" == "1" ]] && command -v nginx >/dev/null 2>&1; then
   install -d "${NGINX_AVAILABLE_DIR}" "${NGINX_ENABLED_DIR}"
@@ -145,8 +142,7 @@ if [[ "${INSTALL_NGINX}" == "1" ]] && command -v nginx >/dev/null 2>&1; then
   systemctl reload nginx
 fi
 
-echo "Installed worker/api services for ${APP_DIR}"
-echo "Environment file: ${ENV_FILE}"
+echo "Installed service for ${APP_DIR}: ${SYSTEMD_DIR}/${SERVICE_NAME}.service"
 if [[ "${INSTALL_NGINX}" == "1" ]] && command -v nginx >/dev/null 2>&1; then
   echo "Nginx site: ${NGINX_AVAILABLE_DIR}/${NGINX_SITE_NAME}"
 fi

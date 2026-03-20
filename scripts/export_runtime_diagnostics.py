@@ -33,7 +33,7 @@ DEFAULT_CONFIG = ROOT / "config" / "monitor.yaml"
 DEFAULT_OUTPUT_ROOT = ROOT / "exports"
 DEFAULT_HOURS = 12
 DEFAULT_API_BASE_URL = "http://127.0.0.1:6080"
-DEFAULT_SERVICES = ("cross-market-monitor-worker", "cross-market-monitor-api")
+DEFAULT_SERVICES = ("cross-market-monitor",)
 DEFAULT_EXTRA_SERVICES = ("nginx", "systemd-resolved")
 ERROR_LIKE_PATTERNS = (
     re.compile(r"\berror\b", re.IGNORECASE),
@@ -158,13 +158,13 @@ def collect_repo_artifacts(output_dir: Path, config_path: Path, config) -> None:
     copy_optional_file(ROOT / "config" / "monitor.example.yaml", output_dir / "monitor.example.yaml")
     if config.app.domestic_trading_calendar_path:
         copy_optional_file(Path(config.app.domestic_trading_calendar_path), output_dir / Path(config.app.domestic_trading_calendar_path).name)
-    copy_optional_file(ROOT / "deploy" / "systemd" / "cross-market-monitor-worker.service", output_dir / "cross-market-monitor-worker.repo.service")
-    copy_optional_file(ROOT / "deploy" / "systemd" / "cross-market-monitor-api.service", output_dir / "cross-market-monitor-api.repo.service")
+    copy_optional_file(ROOT / "systemd" / "cross-market-monitor.service", output_dir / "cross-market-monitor.repo.service")
+    copy_optional_file(ROOT / "deploy" / "systemd" / "cross-market-monitor.service", output_dir / "cross-market-monitor.legacy.repo.service")
+    copy_optional_file(Path("/etc/systemd/system/cross-market-monitor.service"), output_dir / "cross-market-monitor.installed.service")
     copy_optional_file(Path("/etc/systemd/system/cross-market-monitor-worker.service"), output_dir / "cross-market-monitor-worker.installed.service")
     copy_optional_file(Path("/etc/systemd/system/cross-market-monitor-api.service"), output_dir / "cross-market-monitor-api.installed.service")
     copy_optional_file(ROOT / "deploy" / "nginx" / "cross-market-monitor.conf", output_dir / "cross-market-monitor.repo.nginx.conf")
     copy_optional_file(Path("/etc/nginx/sites-available/cross-market-monitor"), output_dir / "cross-market-monitor.installed.nginx.conf")
-    copy_optional_file(Path("/etc/default/cross-market-monitor"), output_dir / "cross-market-monitor.env")
 
     results = {
         "git_status": run_command(["git", "status", "--short"], output_dir, "repo.git_status"),

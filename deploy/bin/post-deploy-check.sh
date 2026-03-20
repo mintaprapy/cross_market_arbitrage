@@ -3,8 +3,7 @@ set -euo pipefail
 
 HOST="${HOST:-127.0.0.1}"
 PORT="${PORT:-6080}"
-WORKER_SERVICE="${WORKER_SERVICE:-cross-market-monitor-worker}"
-API_SERVICE="${API_SERVICE:-cross-market-monitor-api}"
+SERVICE_NAME="${SERVICE_NAME:-cross-market-monitor}"
 
 check_service() {
   local service_name="$1"
@@ -30,8 +29,7 @@ check_url() {
   exit 1
 }
 
-check_service "${WORKER_SERVICE}"
-check_service "${API_SERVICE}"
+check_service "${SERVICE_NAME}"
 check_url "/api/health"
 check_url "/api/snapshot"
 check_url "/"

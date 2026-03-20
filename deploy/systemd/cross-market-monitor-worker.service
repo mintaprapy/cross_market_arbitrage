@@ -9,7 +9,6 @@ User=ubuntu
 Group=ubuntu
 WorkingDirectory=/srv/cross_market_arbitrage
 Environment=PYTHONUNBUFFERED=1
-EnvironmentFile=-/etc/default/cross-market-monitor
 ExecStartPre=/usr/bin/mkdir -p /srv/cross_market_arbitrage/data /srv/cross_market_arbitrage/exports
 ExecStart=/srv/cross_market_arbitrage/.venv/bin/cross-market-monitor --config /srv/cross_market_arbitrage/config/monitor.yaml run-worker
 Restart=always

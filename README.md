@@ -19,7 +19,7 @@ python3 scripts/export_runtime_diagnostics.py --hours 12
 
 如果在 Ubuntu + systemd 环境执行，会额外采集：
 
-- `cross-market-monitor-worker` / `cross-market-monitor-api` 的 `systemctl` 输出
+- `cross-market-monitor` 的 `systemctl` 输出
 - 对应 `journalctl` 日志
 - `nginx` 与 `systemd-resolved` 的状态和最近日志
 
@@ -41,16 +41,7 @@ cd /srv
 git clone https://github.com/mintaprapy/cross_market_arbitrage.git
 cd /srv/cross_market_arbitrage
 cp config/monitor.example.yaml config/monitor.yaml
-sudo cp deploy/systemd/cross-market-monitor.env.example /etc/default/cross-market-monitor
-sudo chmod 600 /etc/default/cross-market-monitor
-sudo editor /etc/default/cross-market-monitor
 ```
-
-需要在 `/etc/default/cross-market-monitor` 里至少确认：
-
-- `TQSDK_USER`
-- `TQSDK_PASSWORD`
-- `TQSDK_MD_URL`（如需要）
 
 3. 创建虚拟环境并安装依赖
 
@@ -82,6 +73,9 @@ editor config/monitor.yaml
 - `app.export_dir`
 - `app.domestic_trading_calendar_path`
 - `notifiers`
+- `sources.tqsdk_domestic.params.auth_user`
+- `sources.tqsdk_domestic.params.auth_password`
+- `sources.tqsdk_domestic.params.md_url`（如需要）
 
 5. 执行安装脚本
 
@@ -104,10 +98,8 @@ sudo ./deploy/bin/post-deploy-check.sh
 7. 查看服务状态和日志
 
 ```bash
-sudo systemctl status cross-market-monitor-worker --no-pager
-sudo systemctl status cross-market-monitor-api --no-pager
-sudo journalctl -u cross-market-monitor-worker -n 100 --no-pager
-sudo journalctl -u cross-market-monitor-api -n 100 --no-pager
+sudo systemctl status cross-market-monitor --no-pager
+sudo journalctl -u cross-market-monitor -n 100 --no-pager
 ```
 
 8. 验证页面和接口
@@ -237,15 +229,18 @@ python3 -m cross_market_monitor.main run-worker
 python3 -m cross_market_monitor.main run-api
 ```
 
-如果要启用 `TqSdk` 启动回补和历史回补，需要先提供认证环境变量：
+如果要启用 `TqSdk` 启动回补和历史回补，直接在 `config/monitor.yaml` 里填写：
 
-```bash
-export TQSDK_USER=your_account
-export TQSDK_PASSWORD=your_password
-export TQSDK_MD_URL=wss://free-api.shinnytech.com/t/nfmd/front/mobile
+```yaml
+sources:
+  tqsdk_domestic:
+    params:
+      auth_user: your_account
+      auth_password: your_password
+      md_url: wss://free-api.shinnytech.com/t/nfmd/front/mobile
 ```
 
-未提供认证时，系统会自动跳过 `TqSdk` 影子链路，不影响主监控。
+不填写认证时，系统会自动跳过需要 `TqSdk` 的链路，不影响主监控。
 
 ## 告警阈值与通知
 
@@ -311,13 +306,10 @@ notifiers:
 
 ## Ubuntu systemd
 
-仓库里已经提供了一套可直接改路径后使用的 `systemd` 模板：
+仓库里已经提供了一套 funding 风格的单服务部署模板：
 
-- [deploy/systemd/cross-market-monitor-worker.service](/Users/m2/Desktop/Codex2026/cross_market_arbitrage/deploy/systemd/cross-market-monitor-worker.service)
-- [deploy/systemd/cross-market-monitor-api.service](/Users/m2/Desktop/Codex2026/cross_market_arbitrage/deploy/systemd/cross-market-monitor-api.service)
+- [systemd/cross-market-monitor.service](/Users/m2/Desktop/Codex2026/cross_market_arbitrage/systemd/cross-market-monitor.service)
 - [deploy/systemd/cross-market-monitor.service](/Users/m2/Desktop/Codex2026/cross_market_arbitrage/deploy/systemd/cross-market-monitor.service)
-- [deploy/systemd/cross-market-monitor.env.example](/Users/m2/Desktop/Codex2026/cross_market_arbitrage/deploy/systemd/cross-market-monitor.env.example)
-- [deploy/systemd/README.md](/Users/m2/Desktop/Codex2026/cross_market_arbitrage/deploy/systemd/README.md)
 - [deploy/nginx/cross-market-monitor.conf](/Users/m2/Desktop/Codex2026/cross_market_arbitrage/deploy/nginx/cross-market-monitor.conf)
 - [deploy/bin/install-ubuntu.sh](/Users/m2/Desktop/Codex2026/cross_market_arbitrage/deploy/bin/install-ubuntu.sh)
 - [deploy/bin/post-deploy-check.sh](/Users/m2/Desktop/Codex2026/cross_market_arbitrage/deploy/bin/post-deploy-check.sh)
@@ -326,7 +318,7 @@ notifiers:
 
 - 项目目录：`/srv/cross_market_arbitrage`
 - 虚拟环境：`/srv/cross_market_arbitrage/.venv`
-- 环境文件：`/etc/default/cross-market-monitor`
+- 真实配置：`/srv/cross_market_arbitrage/config/monitor.yaml`
 - 监听：`127.0.0.1:6080`
 
 推荐安装流程：
@@ -352,8 +344,7 @@ python -m pip install -e .
 查看日志：
 
 ```bash
-sudo journalctl -u cross-market-monitor-worker -f
-sudo journalctl -u cross-market-monitor-api -f
+sudo journalctl -u cross-market-monitor -f
 ```
 
 ## Ubuntu 上线前检查清单
@@ -393,20 +384,15 @@ cp config/monitor.example.yaml config/monitor.yaml
   - `domestic_trading_calendar_path`
   - `notifiers`
   - 每个交易对的 `spread_alert_above / spread_alert_below`
-- 如果线上启用 `TqSdk`，确认 `/etc/default/cross-market-monitor` 里已填：
-  - `TQSDK_USER`
-  - `TQSDK_PASSWORD`
-  - `TQSDK_MD_URL`
+- 如果线上启用 `TqSdk`，确认 `config/monitor.yaml` 已填：
+  - `sources.tqsdk_domestic.params.auth_user`
+  - `sources.tqsdk_domestic.params.auth_password`
+  - `sources.tqsdk_domestic.params.md_url`
 
 4. systemd
 ```bash
-sudo cp deploy/systemd/cross-market-monitor.env.example /etc/default/cross-market-monitor
-sudo chmod 600 /etc/default/cross-market-monitor
-sudo editor /etc/default/cross-market-monitor
-
 sudo ./deploy/bin/install-ubuntu.sh
-sudo systemctl status cross-market-monitor-worker --no-pager
-sudo systemctl status cross-market-monitor-api --no-pager
+sudo systemctl status cross-market-monitor --no-pager
 ```
 
 5. 本机健康检查
@@ -427,8 +413,7 @@ curl -I http://your.domain.com/
 
 7. 日志与告警
 ```bash
-sudo journalctl -u cross-market-monitor-worker -n 100 --no-pager
-sudo journalctl -u cross-market-monitor-api -n 100 --no-pager
+sudo journalctl -u cross-market-monitor -n 100 --no-pager
 ```
 - 确认没有持续报错、没有反复重启
 - 如已启用飞书 / Telegram，建议先手动把某个交易对阈值设得接近当前价差，验证一次通知链路
@@ -446,8 +431,7 @@ sudo journalctl -u cross-market-monitor-api -n 100 --no-pager
   - 告警是否出现误触发
 - 常用命令：
 ```bash
-sudo journalctl -u cross-market-monitor-worker -f
-sudo journalctl -u cross-market-monitor-api -f
+sudo journalctl -u cross-market-monitor -f
 curl -sf http://127.0.0.1:6080/api/health
 ```
 
@@ -534,7 +518,7 @@ http://127.0.0.1:6080
 
 ```ini
 WorkingDirectory=/srv/cross_market_arbitrage
-ExecStart=/srv/cross_market_arbitrage/.venv/bin/python -m cross_market_monitor.main --config /srv/cross_market_arbitrage/config/monitor.yaml run-api --host 127.0.0.1 --port 6080
+ExecStart=/srv/cross_market_arbitrage/.venv/bin/cross-market-monitor --config /srv/cross_market_arbitrage/config/monitor.yaml serve --host 127.0.0.1 --port 6080
 ```
 
 ## 导出与回放

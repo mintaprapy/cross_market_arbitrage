@@ -174,7 +174,7 @@ class TqSdkMainAdapter:
 
     def _md_url(self) -> str:
         md_url_env = self.source_config.params.get("md_url_env", "TQSDK_MD_URL")
-        return os.environ.get(md_url_env) or self.source_config.base_url
+        return self.source_config.params.get("md_url") or os.environ.get(md_url_env) or self.source_config.base_url
 
     def _call_with_retry(
         self,

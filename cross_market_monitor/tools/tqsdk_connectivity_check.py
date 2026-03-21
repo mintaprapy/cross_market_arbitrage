@@ -9,9 +9,11 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from tqsdk import TqApi, TqAuth
 
+from cross_market_monitor.application.common import is_within_trading_sessions
 from cross_market_monitor.infrastructure.config_loader import load_config
 
 DEFAULT_CONFIG = Path(__file__).resolve().parents[2] / "config" / "monitor.yaml"
@@ -82,6 +84,11 @@ def _ensure_dir(path: Path) -> Path:
 @dataclass
 class SymbolStats:
     requested_symbol: str
+    trading_sessions_local: list[str]
+    stale_seconds: int
+    timezone_name: str
+    non_trading_dates_local: list[str]
+    weekends_closed: bool
     attempts: int = 0
     success: int = 0
     fail: int = 0
@@ -89,6 +96,11 @@ class SymbolStats:
     prices: list[float] | None = None
     resolved_symbols: set[str] | None = None
     errors: dict[str, int] | None = None
+    in_session_cycles: int = 0
+    out_of_session_cycles: int = 0
+    stale_in_session_count: int = 0
+    in_session_ages: list[float] | None = None
+    out_of_session_ages: list[float] | None = None
 
     def __post_init__(self) -> None:
         if self.ages is None:
@@ -99,17 +111,44 @@ class SymbolStats:
             self.resolved_symbols = set()
         if self.errors is None:
             self.errors = defaultdict(int)
+        if self.in_session_ages is None:
+            self.in_session_ages = []
+        if self.out_of_session_ages is None:
+            self.out_of_session_ages = []
+
+    def classify_timestamp(self, cycle_ts: datetime) -> bool:
+        local_dt = cycle_ts.astimezone(ZoneInfo(self.timezone_name))
+        return is_within_trading_sessions(
+            local_dt,
+            self.trading_sessions_local,
+            non_trading_dates=self.non_trading_dates_local,
+            weekends_closed=self.weekends_closed,
+        )
 
     def as_dict(self) -> dict[str, Any]:
         success_rate = round(self.success / self.attempts, 4) if self.attempts else None
+        in_session_success = self.in_session_cycles - self.stale_in_session_count
+        in_session_fresh_rate = (
+            round(in_session_success / self.in_session_cycles, 4) if self.in_session_cycles else None
+        )
         return {
             "requested_symbol": self.requested_symbol,
+            "trading_sessions_local": self.trading_sessions_local,
+            "stale_seconds": self.stale_seconds,
             "attempts": self.attempts,
             "success": self.success,
             "fail": self.fail,
             "success_rate": success_rate,
             "median_age_sec": round(statistics.median(self.ages), 3) if self.ages else None,
             "max_age_sec": round(max(self.ages), 3) if self.ages else None,
+            "in_session_cycles": self.in_session_cycles,
+            "out_of_session_cycles": self.out_of_session_cycles,
+            "stale_in_session_count": self.stale_in_session_count,
+            "in_session_fresh_rate": in_session_fresh_rate,
+            "median_age_in_session_sec": round(statistics.median(self.in_session_ages), 3) if self.in_session_ages else None,
+            "max_age_in_session_sec": round(max(self.in_session_ages), 3) if self.in_session_ages else None,
+            "median_age_out_of_session_sec": round(statistics.median(self.out_of_session_ages), 3) if self.out_of_session_ages else None,
+            "max_age_out_of_session_sec": round(max(self.out_of_session_ages), 3) if self.out_of_session_ages else None,
             "latest_price": self.prices[-1] if self.prices else None,
             "resolved_symbols": sorted(self.resolved_symbols),
             "error_counts": dict(self.errors),
@@ -133,34 +172,45 @@ def _resolve_tqsdk_credentials(config_path: Path) -> tuple[str, str, str]:
     return str(user), str(password), str(md_url)
 
 
-def _resolve_probe_symbols(config_path: Path, selected: list[str] | None) -> dict[str, str]:
+def _resolve_probe_specs(config_path: Path, selected: list[str] | None) -> tuple[str, list[str], bool, dict[str, dict[str, Any]]]:
     config = load_config(config_path)
+    timezone_name = config.app.timezone
+    non_trading_dates_local = [item.isoformat() for item in config.app.domestic_non_trading_dates_local]
+    weekends_closed = config.app.domestic_weekends_closed
     product_codes = []
     seen: set[str] = set()
+    specs: dict[str, dict[str, Any]] = {}
     for pair in config.pairs:
         product_code = (pair.domestic_product_code or "").lower().strip()
         if not product_code or product_code in seen or product_code not in TQ_SYMBOLS:
             continue
         seen.add(product_code)
         product_codes.append(product_code)
+        specs[product_code] = {
+            "requested_symbol": TQ_SYMBOLS[product_code],
+            "trading_sessions_local": list(pair.trading_sessions_local),
+            "stale_seconds": pair.thresholds.stale_seconds,
+        }
 
     if selected:
         normalized = [item.strip().lower() for item in selected if item.strip()]
         invalid = [item for item in normalized if item not in TQ_SYMBOLS]
         if invalid:
             raise SystemExit(f"Unsupported product codes: {', '.join(invalid)}")
-        product_codes = [item for item in normalized if item in product_codes or item in TQ_SYMBOLS]
+        product_codes = [item for item in normalized if item in specs]
 
     if not product_codes:
         raise SystemExit("No TqSdk-compatible domestic product codes found in config.")
 
-    return {code: TQ_SYMBOLS[code] for code in product_codes}
+    selected_specs = {code: specs[code] for code in product_codes}
+    return timezone_name, non_trading_dates_local, weekends_closed, selected_specs
 
 
 def run_check(args: argparse.Namespace) -> int:
     config_path = Path(args.config).resolve()
     user, password, md_url = _resolve_tqsdk_credentials(config_path)
-    symbols = _resolve_probe_symbols(config_path, args.products)
+    timezone_name, non_trading_dates_local, weekends_closed, specs = _resolve_probe_specs(config_path, args.products)
+    symbols = {code: spec["requested_symbol"] for code, spec in specs.items()}
     output_dir = _ensure_dir(Path(args.output_dir).resolve())
 
     run_started_at = _utc_now()
@@ -168,7 +218,17 @@ def run_check(args: argparse.Namespace) -> int:
     api: TqApi | None = None
     quotes: dict[str, Any] = {}
     connect_attempts: list[dict[str, Any]] = []
-    stats = {code: SymbolStats(requested_symbol=symbol) for code, symbol in symbols.items()}
+    stats = {
+        code: SymbolStats(
+            requested_symbol=spec["requested_symbol"],
+            trading_sessions_local=spec["trading_sessions_local"],
+            stale_seconds=spec["stale_seconds"],
+            timezone_name=timezone_name,
+            non_trading_dates_local=non_trading_dates_local,
+            weekends_closed=weekends_closed,
+        )
+        for code, spec in specs.items()
+    }
     refresh_latencies: list[float] = []
     refresh_updates = 0
     samples: list[dict[str, Any]] = []
@@ -249,12 +309,23 @@ def run_check(args: argparse.Namespace) -> int:
                 resolved_symbol = getattr(quote, "underlying_symbol", None)
                 if resolved_symbol:
                     stat.resolved_symbols.add(str(resolved_symbol))
+                in_session = stat.classify_timestamp(cycle_ts)
+                if in_session:
+                    stat.in_session_cycles += 1
+                else:
+                    stat.out_of_session_cycles += 1
 
                 if last_price is not None and quote_ts is not None:
                     age_sec = _safe_age_sec(quote_ts, now=cycle_ts)
                     stat.success += 1
                     if age_sec is not None:
                         stat.ages.append(age_sec)
+                        if in_session:
+                            stat.in_session_ages.append(age_sec)
+                            if age_sec > stat.stale_seconds:
+                                stat.stale_in_session_count += 1
+                        else:
+                            stat.out_of_session_ages.append(age_sec)
                     stat.prices.append(float(last_price))
                     samples.append(
                         {
@@ -264,6 +335,8 @@ def run_check(args: argparse.Namespace) -> int:
                             "price": float(last_price),
                             "quote_ts": quote_ts,
                             "age_sec": age_sec,
+                            "in_trading_session": in_session,
+                            "stale_in_session": bool(in_session and age_sec is not None and age_sec > stat.stale_seconds),
                             "refresh_latency_ms": round(refresh_latency, 2),
                             "refresh_updated": updated,
                             "cycle_ts": cycle_ts,
@@ -271,6 +344,8 @@ def run_check(args: argparse.Namespace) -> int:
                     )
                 else:
                     stat.fail += 1
+                    if in_session:
+                        stat.stale_in_session_count += 1
                     if last_price is None and quote_ts is None:
                         stat.errors["missing_price_and_datetime"] += 1
                     elif last_price is None:
@@ -293,6 +368,9 @@ def run_check(args: argparse.Namespace) -> int:
         "started_at": run_started_at,
         "ended_at": _utc_now(),
         "config_path": str(config_path),
+        "timezone": timezone_name,
+        "domestic_non_trading_dates_local": non_trading_dates_local,
+        "domestic_weekends_closed": weekends_closed,
         "duration_sec": args.duration_sec,
         "interval_sec": args.interval_sec,
         "connect_timeout_sec": args.connect_timeout_sec,

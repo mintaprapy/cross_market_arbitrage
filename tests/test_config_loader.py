@@ -60,6 +60,18 @@ class ConfigLoaderTests(unittest.TestCase):
                 ).strip() + "\n",
                 encoding="utf-8",
             )
+            (config_dir / "alert_thresholds.yaml").write_text(
+                textwrap.dedent(
+                    """
+                    alert_thresholds:
+                      AU_XAU_TEST:
+                        spread_pct_above: 2%
+                        spread_pct_below: -1.5%
+                        zscore_above: 2.5
+                    """
+                ).strip() + "\n",
+                encoding="utf-8",
+            )
             (config_dir / "notifiers.yaml").write_text(
                 textwrap.dedent(
                     """
@@ -78,6 +90,7 @@ class ConfigLoaderTests(unittest.TestCase):
                       - app.yaml
                       - sources.yaml
                       - pairs.yaml
+                      - alert_thresholds.yaml
                       - notifiers.yaml
                     app:
                       export_dir: exports
@@ -92,6 +105,9 @@ class ConfigLoaderTests(unittest.TestCase):
             self.assertEqual(config.app.fx_source, "fx")
             self.assertEqual(config.app.export_dir, str((root / "exports").resolve()))
             self.assertEqual(len(config.pairs), 1)
+            self.assertEqual(config.pairs[0].thresholds.spread_pct_alert_above, 0.02)
+            self.assertEqual(config.pairs[0].thresholds.spread_pct_alert_below, -0.015)
+            self.assertEqual(config.pairs[0].thresholds.zscore_alert_above, 2.5)
             self.assertEqual(config.notifiers[0].name, "console_alerts")
 
     def test_load_config_ignores_missing_optional_imports(self) -> None:
@@ -153,8 +169,7 @@ class ConfigLoaderTests(unittest.TestCase):
                       - sources.yaml
                       - pairs.yaml
                     optional_imports:
-                      - monitor.secrets.local.yaml
-                      - monitor.notifiers.local.yaml
+                      - local.yaml
                     """
                 ).strip() + "\n",
                 encoding="utf-8",

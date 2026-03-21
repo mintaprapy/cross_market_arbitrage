@@ -10,7 +10,7 @@ __pycache__/
 .env.*
 !.env.example
 
-config/*.local.yaml
+config/local.yaml
 
 data/
 exports/

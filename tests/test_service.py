@@ -2,6 +2,7 @@ import asyncio
 import tempfile
 import unittest
 from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 from unittest import mock
 
 from cross_market_monitor.application.service import MonitorService
@@ -1959,7 +1960,120 @@ class MonitorServiceTests(unittest.TestCase):
             spread_level_alerts = [alert for alert in alerts if alert["category"] == "spread_level"]
 
             self.assertTrue(spread_level_alerts)
-            self.assertIn("below threshold", spread_level_alerts[0]["message"])
+            self.assertEqual(
+                spread_level_alerts[0]["message"],
+                "AU_XAU_TEST：-3.46%  |  -15.66\n中 100 | 换 444.34 | 外 460.00",
+            )
+
+    def test_emits_spread_pct_alert_from_unquoted_percentage_threshold(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repository = SQLiteRepository(f"{tmp_dir}/monitor.db")
+            config = MonitorConfig.model_validate(
+                {
+                    "app": {
+                        "name": "test",
+                        "fx_source": "fx",
+                        "sqlite_path": f"{tmp_dir}/monitor.db",
+                    },
+                    "sources": {
+                        "domestic": {"kind": "mock_quote", "base_url": "http://local"},
+                        "overseas": {"kind": "mock_quote", "base_url": "http://local"},
+                        "fx": {"kind": "mock_fx", "base_url": "http://local"},
+                    },
+                    "pairs": [
+                        {
+                            "group_name": "AU_XAU_TEST",
+                            "domestic_source": "domestic",
+                            "domestic_symbol": "nf_AU0",
+                            "domestic_label": "AU Main",
+                            "overseas_source": "overseas",
+                            "overseas_symbol": "XAU",
+                            "overseas_label": "XAU",
+                            "formula": "gold",
+                            "domestic_unit": "CNY_PER_GRAM",
+                            "target_unit": "USD_PER_OUNCE",
+                            "thresholds": {
+                                "spread_pct_alert_above": "2%",
+                            },
+                        }
+                    ],
+                }
+            )
+            service = MonitorService(config, repository)
+            service.adapters["domestic"] = StaticQuoteAdapter("domestic", 100.0, 99.9, 100.1)
+            service.adapters["overseas"] = StaticQuoteAdapter("overseas", 430.0, 429.5, 430.5)
+            service.adapters["fx"] = StaticFxAdapter("fx", 7.0)
+
+            asyncio.run(service.poll_once())
+
+            alerts = repository.fetch_alerts(limit=20)
+            spread_pct_alerts = [alert for alert in alerts if alert["category"] == "spread_pct"]
+
+            self.assertTrue(spread_pct_alerts)
+            self.assertEqual(
+                spread_pct_alerts[0]["message"],
+                "AU_XAU_TEST：3.28%  |  14.34\n中 100 | 换 444.34 | 外 430.00",
+            )
+
+    def test_emits_spread_level_alert_with_compact_notification_message(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repository = SQLiteRepository(f"{tmp_dir}/monitor.db")
+            config = MonitorConfig.model_validate(
+                {
+                    "app": {
+                        "name": "test",
+                        "fx_source": "fx",
+                        "sqlite_path": f"{tmp_dir}/monitor.db",
+                    },
+                    "sources": {
+                        "domestic": {"kind": "mock_quote", "base_url": "http://local"},
+                        "overseas": {"kind": "mock_quote", "base_url": "http://local"},
+                        "fx": {"kind": "mock_fx", "base_url": "http://local"},
+                    },
+                    "pairs": [
+                        {
+                            "group_name": "AG_XAG_TEST",
+                            "domestic_source": "domestic",
+                            "domestic_symbol": "nf_AG0",
+                            "domestic_label": "AG Main",
+                            "overseas_source": "overseas",
+                            "overseas_symbol": "XAG",
+                            "overseas_label": "XAG",
+                            "formula": "silver",
+                            "domestic_unit": "CNY_PER_KG",
+                            "target_unit": "USD_PER_OUNCE",
+                            "thresholds": {
+                                "spread_alert_above": 5.0,
+                            },
+                        }
+                    ],
+                }
+            )
+            service = MonitorService(config, repository)
+            service.adapters["domestic"] = StaticQuoteAdapter("domestic", 17728.0, 17727.0, 17729.0)
+            service.adapters["overseas"] = StaticQuoteAdapter("overseas", 72.21, 72.20, 72.22)
+            service.adapters["fx"] = StaticFxAdapter("fx", 6.9)
+
+            with (
+                mock.patch(
+                    "cross_market_monitor.application.monitor.snapshot_builder.compute_spread",
+                    return_value=(5.0, 0.069),
+                ),
+                mock.patch(
+                    "cross_market_monitor.application.monitor.snapshot_builder.normalize_domestic_quote",
+                    return_value=SimpleNamespace(last=77.21, bid=77.20, ask=77.22),
+                ),
+            ):
+                asyncio.run(service.poll_once())
+
+            alerts = repository.fetch_alerts(limit=20)
+            spread_level_alerts = [alert for alert in alerts if alert["category"] == "spread_level"]
+
+            self.assertTrue(spread_level_alerts)
+            self.assertEqual(
+                spread_level_alerts[0]["message"],
+                "AG_XAG_TEST：6.90%  |  5.00\n中 17,728 | 换 77.21 | 外 72.21",
+            )
 
     def test_domestic_route_options_only_expose_main_route_by_default(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

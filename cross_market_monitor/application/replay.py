@@ -114,10 +114,20 @@ class ReplayAnalyzer:
             spread_pct_max=max(spread_pcts) if spread_pcts else None,
             max_abs_zscore=max((abs(value) for value in zscores), default=None),
             spread_pct_breach_count=sum(
-                1 for value in spread_pcts if abs(value) >= pair.thresholds.spread_pct_abs
+                1 for value in spread_pcts if _value_breaches_thresholds(
+                    value,
+                    above=pair.thresholds.spread_pct_alert_above,
+                    below=pair.thresholds.spread_pct_alert_below,
+                    legacy_abs=pair.thresholds.spread_pct_abs,
+                )
             ),
             zscore_breach_count=sum(
-                1 for value in zscores if abs(value) >= pair.thresholds.zscore_abs
+                1 for value in zscores if _value_breaches_thresholds(
+                    value,
+                    above=pair.thresholds.zscore_alert_above,
+                    below=pair.thresholds.zscore_alert_below,
+                    legacy_abs=pair.thresholds.zscore_abs,
+                )
             ),
             convergence_count=convergence_count,
             divergence_count=divergence_count,
@@ -193,7 +203,12 @@ class ReplayAnalyzer:
         active_zscore = False
         for row in rows:
             if row["spread_pct"] is not None:
-                in_breach = abs(row["spread_pct"]) >= pair.thresholds.spread_pct_abs
+                threshold_value, direction, in_breach = _threshold_match(
+                    row["spread_pct"],
+                    above=pair.thresholds.spread_pct_alert_above,
+                    below=pair.thresholds.spread_pct_alert_below,
+                    legacy_abs=pair.thresholds.spread_pct_abs,
+                )
                 if in_breach and not active_spread:
                     entries.append(
                         ReplaySignalEvent(
@@ -201,13 +216,18 @@ class ReplayAnalyzer:
                             group_name=pair.group_name,
                             trigger="spread_pct",
                             value=row["spread_pct"],
-                            threshold=pair.thresholds.spread_pct_abs,
-                            direction="positive" if row["spread_pct"] > 0 else "negative",
+                            threshold=threshold_value if threshold_value is not None else 0.0,
+                            direction=direction,
                         )
                     )
                 active_spread = in_breach
             if row["zscore"] is not None:
-                in_breach = abs(row["zscore"]) >= pair.thresholds.zscore_abs
+                threshold_value, direction, in_breach = _threshold_match(
+                    row["zscore"],
+                    above=pair.thresholds.zscore_alert_above,
+                    below=pair.thresholds.zscore_alert_below,
+                    legacy_abs=pair.thresholds.zscore_abs,
+                )
                 if in_breach and not active_zscore:
                     entries.append(
                         ReplaySignalEvent(
@@ -215,8 +235,8 @@ class ReplayAnalyzer:
                             group_name=pair.group_name,
                             trigger="zscore",
                             value=row["zscore"],
-                            threshold=pair.thresholds.zscore_abs,
-                            direction="positive" if row["zscore"] > 0 else "negative",
+                            threshold=threshold_value if threshold_value is not None else 0.0,
+                            direction=direction,
                         )
                     )
                 active_zscore = in_breach
@@ -260,6 +280,38 @@ def _safe_std(values: list[float]) -> float | None:
 
 def _parse_iso(value: str) -> datetime:
     return datetime.fromisoformat(value)
+
+
+def _value_breaches_thresholds(
+    value: float,
+    *,
+    above: float | None,
+    below: float | None,
+    legacy_abs: float | None,
+) -> bool:
+    if above is not None and value >= above:
+        return True
+    if below is not None and value <= below:
+        return True
+    if above is None and below is None and legacy_abs is not None and abs(value) >= legacy_abs:
+        return True
+    return False
+
+
+def _threshold_match(
+    value: float,
+    *,
+    above: float | None,
+    below: float | None,
+    legacy_abs: float | None,
+) -> tuple[float | None, str, bool]:
+    if above is not None and value >= above:
+        return above, "positive", True
+    if below is not None and value <= below:
+        return below, "negative", True
+    if above is None and below is None and legacy_abs is not None and abs(value) >= legacy_abs:
+        return legacy_abs, "positive" if value > 0 else "negative", True
+    return None, "positive" if value > 0 else "negative", False
 
 
 def _ols_beta_intercept(x_values: list[float], y_values: list[float]) -> tuple[float | None, float | None]:

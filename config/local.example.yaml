@@ -1,3 +1,10 @@
+sources:
+  tqsdk_domestic:
+    params:
+      auth_user: your_tqsdk_account
+      auth_password: your_tqsdk_password
+      md_url: wss://free-api.shinnytech.com/t/nfmd/front/mobile
+
 notifiers:
   - name: console_alerts
     kind: console
@@ -15,7 +22,6 @@ notifiers:
     kind: feishu
     enabled: false
     min_severity: warning
-    categories: [spread_level]
     url: https://open.feishu.cn/open-apis/bot/v2/hook/replace-me
     timeout_sec: 5
 
@@ -30,7 +36,6 @@ notifiers:
     kind: telegram
     enabled: false
     min_severity: warning
-    categories: [spread_level]
     bot_token: replace-me
     chat_id: replace-me
     timeout_sec: 5

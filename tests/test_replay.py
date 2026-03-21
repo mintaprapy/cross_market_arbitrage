@@ -22,6 +22,10 @@ class ReplayAnalyzerTests(unittest.TestCase):
                 formula="gold",
                 domestic_unit="CNY_PER_GRAM",
                 target_unit="USD_PER_OUNCE",
+                thresholds={
+                    "spread_pct_alert_above": 0.02,
+                    "zscore_alert_above": 2.5,
+                },
             )
 
             base = datetime(2026, 3, 13, 0, 0, tzinfo=UTC)

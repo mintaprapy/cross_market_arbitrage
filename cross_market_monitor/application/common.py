@@ -138,6 +138,13 @@ def variant_group_base(group_name: str) -> str:
     return group_name
 
 
+def display_group_name(group_name: str) -> str:
+    base_name = variant_group_base(group_name)
+    if group_name.endswith("_NET"):
+        return f"{base_name}除税"
+    return base_name
+
+
 def infer_product_code(symbol: str) -> str | None:
     mapping = {
         "nf_AU0": "au",

@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 TaxMode = Literal["gross", "net"]
@@ -13,16 +13,59 @@ AlertSeverity = Literal["info", "warning", "critical"]
 
 
 class ThresholdConfig(BaseModel):
-    spread_pct_abs: float = 0.02
-    zscore_abs: float = 2.5
+    spread_pct_abs: float | None = None
+    zscore_abs: float | None = None
     spread_alert_above: float | None = None
     spread_alert_below: float | None = None
+    spread_pct_alert_above: float | None = None
+    spread_pct_alert_below: float | None = None
+    zscore_alert_above: float | None = None
+    zscore_alert_below: float | None = None
     stale_seconds: int = 120
     max_skew_seconds: int = 120
     alert_cooldown_seconds: int = 300
     fx_jump_abs_pct: float = 0.005
     pause_on_fx_jump: bool = True
     stale_alert_grace_sec: int = 900
+
+    @field_validator(
+        "spread_pct_abs",
+        "zscore_abs",
+        "spread_alert_above",
+        "spread_alert_below",
+        "spread_pct_alert_above",
+        "spread_pct_alert_below",
+        "zscore_alert_above",
+        "zscore_alert_below",
+        "fx_jump_abs_pct",
+        mode="before",
+    )
+    @classmethod
+    def parse_threshold_values(cls, value: object, info) -> float | None:
+        if value in (None, ""):
+            return None
+        if isinstance(value, (int, float)):
+            parsed = float(value)
+        else:
+            text = str(value).strip()
+            if not text:
+                return None
+            compact = "".join(text.split())
+            for prefix in (">=", "<=", ">", "<"):
+                if compact.startswith(prefix):
+                    compact = compact[len(prefix):]
+                    break
+            is_percent = info.field_name in {
+                "spread_pct_abs",
+                "spread_pct_alert_above",
+                "spread_pct_alert_below",
+                "fx_jump_abs_pct",
+            } or "%" in compact
+            compact = compact.replace("%", "")
+            parsed = float(compact)
+            if is_percent:
+                parsed /= 100
+        return parsed
 
 
 class CostModelConfig(BaseModel):

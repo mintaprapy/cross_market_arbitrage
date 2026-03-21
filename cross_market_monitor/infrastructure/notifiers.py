@@ -23,8 +23,6 @@ class BaseNotifier:
     def should_send(self, alert: AlertEvent) -> bool:
         if SEVERITY_RANK[alert.severity] < SEVERITY_RANK[self.config.min_severity]:
             return False
-        if self.config.categories and alert.category not in self.config.categories:
-            return False
         if self.config.group_names and alert.group_name not in self.config.group_names:
             return False
         return True
@@ -66,15 +64,10 @@ class FeishuNotifier(WebhookNotifier):
     def send(self, alert: AlertEvent) -> NotifyResult:
         if not self.config.url:
             raise ValueError(f"Feishu notifier {self.config.name} is missing url")
-        base = alert_payload(alert)
         payload = {
             "msg_type": "text",
             "content": {
-                "text": (
-                    f"[{alert.severity.upper()}] {alert.group_name} {alert.category}\n"
-                    f"{alert.message}\n"
-                    f"{base['timestamp']}"
-                )
+                "text": human_notification_text(alert)
             },
         }
         response = self.http_client.post_json(self.config.url, payload, headers=self.config.headers)
@@ -90,15 +83,10 @@ class WecomNotifier(WebhookNotifier):
     def send(self, alert: AlertEvent) -> NotifyResult:
         if not self.config.url:
             raise ValueError(f"WeCom notifier {self.config.name} is missing url")
-        base = alert_payload(alert)
         payload = {
             "msgtype": "markdown",
             "markdown": {
-                "content": (
-                    f"**{alert.group_name} {alert.category} {alert.severity}**\n"
-                    f"> {alert.message}\n"
-                    f"`{base['timestamp']}`"
-                )
+                "content": human_notification_text(alert).replace("\n", "\n> ")
             },
         }
         response = self.http_client.post_json(self.config.url, payload, headers=self.config.headers)
@@ -120,14 +108,9 @@ class TelegramNotifier(BaseNotifier):
             raise ValueError(
                 f"Telegram notifier {self.config.name} requires bot_token and chat_id"
             )
-        base = alert_payload(alert)
         payload = {
             "chat_id": self.config.chat_id,
-            "text": (
-                f"[{alert.severity.upper()}] {alert.group_name} {alert.category}\n"
-                f"{alert.message}\n"
-                f"{base['timestamp']}"
-            ),
+            "text": human_notification_text(alert),
         }
         url = f"https://api.telegram.org/bot{self.config.bot_token}/sendMessage"
         response = self.http_client.post_json(url, payload, headers=self.config.headers)
@@ -149,6 +132,16 @@ def alert_payload(alert: AlertEvent) -> dict:
         "message": alert.message,
         "metadata": alert.metadata,
     }
+
+
+def human_notification_text(alert: AlertEvent) -> str:
+    if alert.category in {"spread_level", "spread_pct"}:
+        return alert.message
+    return (
+        f"[{alert.severity.upper()}] {alert.group_name} {alert.category}\n"
+        f"{alert.message}\n"
+        f"{alert.ts.isoformat()}"
+    )
 
 
 def build_notifier(config: NotifierConfig):

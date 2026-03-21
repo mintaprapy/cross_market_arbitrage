@@ -5,6 +5,7 @@ import logging
 from datetime import datetime
 
 from cross_market_monitor.application.common import is_within_trading_sessions
+from cross_market_monitor.application.common import display_group_name
 from cross_market_monitor.application.context import ServiceContext
 from cross_market_monitor.application.history.history_service import HistoryService
 from cross_market_monitor.domain.models import AlertEvent, NotificationDelivery, PairConfig, SpreadSnapshot
@@ -79,13 +80,11 @@ class AlertService:
                         pair.group_name,
                         "spread_level",
                         "warning",
-                        (
-                            f"{pair.group_name} spread reached {snapshot.spread:.4f}, "
-                            f"above threshold {pair.thresholds.spread_alert_above:.4f}"
-                        ),
+                        self.format_spread_notification_message(pair, snapshot),
                         {
                             "spread": snapshot.spread,
                             "threshold": pair.thresholds.spread_alert_above,
+                            "trigger_direction": "above",
                             "normalized_last": snapshot.normalized_last,
                             "overseas_last": snapshot.overseas_last,
                         },
@@ -103,42 +102,19 @@ class AlertService:
                         pair.group_name,
                         "spread_level",
                         "warning",
-                        (
-                            f"{pair.group_name} spread reached {snapshot.spread:.4f}, "
-                            f"below threshold {pair.thresholds.spread_alert_below:.4f}"
-                        ),
+                        self.format_spread_notification_message(pair, snapshot),
                         {
                             "spread": snapshot.spread,
                             "threshold": pair.thresholds.spread_alert_below,
+                            "trigger_direction": "below",
                             "normalized_last": snapshot.normalized_last,
                             "overseas_last": snapshot.overseas_last,
                         },
                     )
                 )
 
-            if snapshot.spread_pct is not None and abs(snapshot.spread_pct) >= pair.thresholds.spread_pct_abs:
-                alerts.append(
-                    self.make_alert(
-                        now,
-                        pair.group_name,
-                        "spread_pct",
-                        "warning",
-                        f"{pair.group_name} spread_pct reached {snapshot.spread_pct:.2%}",
-                        {"spread_pct": snapshot.spread_pct, "spread": snapshot.spread},
-                    )
-                )
-
-            if snapshot.zscore is not None and abs(snapshot.zscore) >= pair.thresholds.zscore_abs:
-                alerts.append(
-                    self.make_alert(
-                        now,
-                        pair.group_name,
-                        "zscore",
-                        "warning",
-                        f"{pair.group_name} zscore reached {snapshot.zscore:.2f}",
-                        {"zscore": snapshot.zscore, "spread": snapshot.spread},
-                    )
-                )
+            alerts.extend(self.evaluate_spread_pct_alerts(now, pair, snapshot))
+            alerts.extend(self.evaluate_zscore_alerts(now, pair, snapshot))
 
             shadow_comparison = self.history.get_shadow_comparison(pair.group_name, limit=30)
             if shadow_comparison is not None:
@@ -161,6 +137,153 @@ class AlertService:
                         )
                     )
 
+        return [alert for alert in alerts if alert is not None]
+
+    def evaluate_spread_pct_alerts(
+        self,
+        now: datetime,
+        pair: PairConfig,
+        snapshot: SpreadSnapshot,
+    ) -> list[AlertEvent]:
+        if snapshot.spread_pct is None:
+            return []
+
+        alerts: list[AlertEvent] = []
+        upper = pair.thresholds.spread_pct_alert_above
+        lower = pair.thresholds.spread_pct_alert_below
+        legacy_abs = pair.thresholds.spread_pct_abs
+
+        if upper is not None and snapshot.spread_pct >= upper:
+            alerts.append(
+                self.make_alert(
+                    now,
+                    pair.group_name,
+                    "spread_pct",
+                    "warning",
+                    self.format_spread_notification_message(pair, snapshot),
+                    {
+                        "spread_pct": snapshot.spread_pct,
+                        "spread": snapshot.spread,
+                        "threshold": upper,
+                        "trigger_direction": "above",
+                    },
+                )
+            )
+        if lower is not None and snapshot.spread_pct <= lower:
+            alerts.append(
+                self.make_alert(
+                    now,
+                    pair.group_name,
+                    "spread_pct",
+                    "warning",
+                    self.format_spread_notification_message(pair, snapshot),
+                    {
+                        "spread_pct": snapshot.spread_pct,
+                        "spread": snapshot.spread,
+                        "threshold": lower,
+                        "trigger_direction": "below",
+                    },
+                )
+            )
+        if upper is None and lower is None and legacy_abs is not None and abs(snapshot.spread_pct) >= legacy_abs:
+            alerts.append(
+                self.make_alert(
+                    now,
+                    pair.group_name,
+                    "spread_pct",
+                    "warning",
+                    self.format_spread_notification_message(pair, snapshot),
+                    {
+                        "spread_pct": snapshot.spread_pct,
+                        "spread": snapshot.spread,
+                        "threshold": legacy_abs,
+                    },
+                )
+            )
+        return [alert for alert in alerts if alert is not None]
+
+    def format_spread_notification_message(self, pair: PairConfig, snapshot: SpreadSnapshot) -> str:
+        name_text = display_group_name(pair.group_name)
+        spread_pct_text = self.format_percentage(snapshot.spread_pct)
+        spread_text = self.format_fixed(snapshot.spread, decimals=2)
+        domestic_text = self.format_domestic_price(snapshot.domestic_last_raw)
+        normalized_text = self.format_fixed(snapshot.normalized_last, decimals=2)
+        overseas_text = self.format_fixed(snapshot.overseas_last, decimals=2)
+        return (
+            f"{name_text}：{spread_pct_text}  |  {spread_text}\n"
+            f"中 {domestic_text} | 换 {normalized_text} | 外 {overseas_text}"
+        )
+
+    def format_percentage(self, value: float | None) -> str:
+        if value is None:
+            return "--"
+        return f"{value:.2%}"
+
+    def format_fixed(self, value: float | None, *, decimals: int) -> str:
+        if value is None:
+            return "--"
+        return f"{value:,.{decimals}f}"
+
+    def format_domestic_price(self, value: float | None) -> str:
+        if value is None:
+            return "--"
+        if abs(value - round(value)) < 1e-9:
+            return f"{round(value):,}"
+        return self.format_fixed(value, decimals=2)
+
+    def evaluate_zscore_alerts(
+        self,
+        now: datetime,
+        pair: PairConfig,
+        snapshot: SpreadSnapshot,
+    ) -> list[AlertEvent]:
+        if snapshot.zscore is None:
+            return []
+
+        alerts: list[AlertEvent] = []
+        upper = pair.thresholds.zscore_alert_above
+        lower = pair.thresholds.zscore_alert_below
+        legacy_abs = pair.thresholds.zscore_abs
+
+        if upper is not None and snapshot.zscore >= upper:
+            alerts.append(
+                self.make_alert(
+                    now,
+                    pair.group_name,
+                    "zscore",
+                    "warning",
+                    (
+                        f"{pair.group_name} zscore reached {snapshot.zscore:.2f}, "
+                        f"above threshold {upper:.2f}"
+                    ),
+                    {"zscore": snapshot.zscore, "spread": snapshot.spread, "threshold": upper},
+                )
+            )
+        if lower is not None and snapshot.zscore <= lower:
+            alerts.append(
+                self.make_alert(
+                    now,
+                    pair.group_name,
+                    "zscore",
+                    "warning",
+                    (
+                        f"{pair.group_name} zscore reached {snapshot.zscore:.2f}, "
+                        f"below threshold {lower:.2f}"
+                    ),
+                    {"zscore": snapshot.zscore, "spread": snapshot.spread, "threshold": lower},
+                )
+            )
+        if upper is None and lower is None and legacy_abs is not None and abs(snapshot.zscore) >= legacy_abs:
+            alerts.append(
+                self.make_alert(
+                    now,
+                    pair.group_name,
+                    "zscore",
+                    "warning",
+                    f"{pair.group_name} zscore reached {snapshot.zscore:.2f}",
+                    {"zscore": snapshot.zscore, "spread": snapshot.spread, "threshold": legacy_abs},
+                )
+            )
         return [alert for alert in alerts if alert is not None]
 
     def should_emit_stale_alert(self, pair: PairConfig, snapshot: SpreadSnapshot) -> bool:

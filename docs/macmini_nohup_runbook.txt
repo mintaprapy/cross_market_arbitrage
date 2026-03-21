@@ -17,13 +17,11 @@ source .venv/bin/activate
 python -m pip install --upgrade pip
 python -m pip install -e ".[tqsdk,parquet]"
 
-cp config/monitor.secrets.local.example.yaml config/monitor.secrets.local.yaml
-cp config/monitor.notifiers.local.example.yaml config/monitor.notifiers.local.yaml
+cp config/local.example.yaml config/local.yaml
 
 然后按需填写：
 
-- config/monitor.secrets.local.yaml
-- config/monitor.notifiers.local.yaml
+- config/local.yaml
 
 2. 启动前检查
 

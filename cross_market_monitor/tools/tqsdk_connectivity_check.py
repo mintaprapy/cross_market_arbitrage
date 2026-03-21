@@ -166,7 +166,7 @@ def _resolve_tqsdk_credentials(config_path: Path) -> tuple[str, str, str]:
 
     if not user or not password:
         raise SystemExit(
-            "Missing TqSdk credentials. Fill config/monitor.secrets.local.yaml under "
+            "Missing TqSdk credentials. Fill config/local.yaml under "
             "sources.tqsdk_domestic.params.auth_user/auth_password."
         )
     return str(user), str(password), str(md_url)

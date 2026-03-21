@@ -10,18 +10,25 @@ from cross_market_monitor.infrastructure.config_loader import load_config
 from cross_market_monitor.infrastructure.repository import SQLiteRepository
 
 DEFAULT_CONFIG = Path(__file__).resolve().parents[1] / "config" / "monitor.yaml"
+ONE_SHOT_APP_OVERRIDES = {
+    "startup_history_backfill_enabled": False,
+    "tqsdk_startup_backfill_enabled": False,
+}
 
 
-def load_runtime(config_path: str):
+def load_runtime(config_path: str, *, app_overrides: dict | None = None):
     config = load_config(config_path)
+    if app_overrides:
+        app_config = config.app.model_copy(update=app_overrides)
+        config = config.model_copy(update={"app": app_config})
     repository = SQLiteRepository(config.app.sqlite_path)
     return config, repository
 
 
-def build_service(config_path: str):
+def build_service(config_path: str, *, app_overrides: dict | None = None):
     from cross_market_monitor.application.service import MonitorService
 
-    config, repository = load_runtime(config_path)
+    config, repository = load_runtime(config_path, app_overrides=app_overrides)
     return MonitorService(config, repository)
 
 
@@ -57,7 +64,7 @@ def _fmt_pct(value: float | None) -> str:
 
 async def run_console(config_path: str, cycles: int) -> None:
     service = build_service(config_path)
-    await service.startup()
+    await service.startup(background_history=cycles > 1)
     try:
         for _ in range(cycles):
             await service.poll_once()
@@ -68,9 +75,20 @@ async def run_console(config_path: str, cycles: int) -> None:
         await service.shutdown()
 
 
+async def run_once(config_path: str, *, with_startup_history: bool = False) -> None:
+    app_overrides = None if with_startup_history else dict(ONE_SHOT_APP_OVERRIDES)
+    service = build_service(config_path, app_overrides=app_overrides)
+    await service.startup()
+    try:
+        await service.poll_once()
+        print_console_table(service.get_snapshot())
+    finally:
+        await service.shutdown()
+
+
 async def run_worker(config_path: str) -> None:
     service = build_service(config_path)
-    await service.startup()
+    await service.startup(background_history=True)
     try:
         await service.run_forever()
     finally:
@@ -216,9 +234,20 @@ def main() -> None:
     console_parser = subparsers.add_parser("console", help="Run polling cycles and print table output")
     console_parser.add_argument("--cycles", type=int, default=1, help="Number of cycles to run")
 
-    subparsers.add_parser("run-once", help="Run a single polling cycle")
+    run_once_parser = subparsers.add_parser(
+        "run-once",
+        help="Run a single polling cycle without startup history backfill by default",
+    )
+    run_once_parser.add_argument(
+        "--with-startup-history",
+        action="store_true",
+        help="Also run configured startup history backfill before the single polling cycle",
+    )
 
-    subparsers.add_parser("run-worker", help="Run the monitor worker loop without starting the API")
+    subparsers.add_parser(
+        "run-worker",
+        help="Run the monitor worker loop and backfill startup history in the background",
+    )
 
     serve_parser = subparsers.add_parser("serve", help="Run FastAPI dashboard")
     serve_parser.add_argument("--host", default=None, help="Bind host")
@@ -307,7 +336,7 @@ def main() -> None:
         return
 
     if args.command == "run-once":
-        _run_async(run_console(args.config, 1))
+        _run_async(run_once(args.config, with_startup_history=args.with_startup_history))
         return
 
     if args.command == "run-worker":

@@ -1,8 +1,8 @@
 imports:
-  - monitor.app.yaml
-  - monitor.sources.yaml
-  - monitor.pairs.yaml
-  - monitor.notifiers.yaml
+  - app.yaml
+  - sources.yaml
+  - pairs.yaml
+  - alert_thresholds.yaml
+  - notifiers.yaml
 optional_imports:
-  - monitor.secrets.local.yaml
-  - monitor.notifiers.local.yaml
+  - local.yaml

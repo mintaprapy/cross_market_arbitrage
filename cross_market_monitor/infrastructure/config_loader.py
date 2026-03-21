@@ -10,6 +10,7 @@ from cross_market_monitor.domain.models import MonitorConfig
 def load_config(path: str | Path) -> MonitorConfig:
     config_path = Path(path).resolve()
     raw = _load_raw_config(config_path)
+    raw = _merge_alert_thresholds(raw)
     raw = _merge_trading_calendar(raw, config_path)
     config = MonitorConfig.model_validate(raw)
 
@@ -123,4 +124,59 @@ def _merge_trading_calendar(raw: dict | None, config_path: Path) -> dict:
         app["domestic_non_trading_dates_local"] = deduped
 
     payload["app"] = app
+    return payload
+
+
+_ALERT_THRESHOLD_KEY_MAP = {
+    "spread_above": "spread_alert_above",
+    "spread_below": "spread_alert_below",
+    "spread_pct_above": "spread_pct_alert_above",
+    "spread_pct_below": "spread_pct_alert_below",
+    "zscore_above": "zscore_alert_above",
+    "zscore_below": "zscore_alert_below",
+    "spread_alert_above": "spread_alert_above",
+    "spread_alert_below": "spread_alert_below",
+    "spread_pct_alert_above": "spread_pct_alert_above",
+    "spread_pct_alert_below": "spread_pct_alert_below",
+    "zscore_alert_above": "zscore_alert_above",
+    "zscore_alert_below": "zscore_alert_below",
+    "spread_pct_abs": "spread_pct_abs",
+    "zscore_abs": "zscore_abs",
+}
+
+
+def _merge_alert_thresholds(raw: dict | None) -> dict:
+    payload = dict(raw or {})
+    alert_thresholds = payload.pop("alert_thresholds", None)
+    if not alert_thresholds:
+        return payload
+    if not isinstance(alert_thresholds, dict):
+        raise ValueError("alert_thresholds must be a mapping")
+
+    pairs = payload.get("pairs") or []
+    if not isinstance(pairs, list):
+        raise ValueError("pairs must be a list before merging alert_thresholds")
+
+    pair_map: dict[str, dict] = {}
+    for item in pairs:
+        if isinstance(item, dict) and isinstance(item.get("group_name"), str):
+            pair_map[item["group_name"]] = item
+
+    for group_name, values in alert_thresholds.items():
+        if not isinstance(group_name, str):
+            raise ValueError("alert_thresholds keys must be group names")
+        if group_name not in pair_map:
+            raise ValueError(f"alert_thresholds references unknown pair: {group_name}")
+        if not isinstance(values, dict):
+            raise ValueError(f"alert_thresholds[{group_name}] must be a mapping")
+
+        pair_thresholds = dict(pair_map[group_name].get("thresholds") or {})
+        for key, value in values.items():
+            mapped_key = _ALERT_THRESHOLD_KEY_MAP.get(key)
+            if mapped_key is None:
+                raise ValueError(f"Unsupported alert threshold key for {group_name}: {key}")
+            pair_thresholds[mapped_key] = value
+        pair_map[group_name]["thresholds"] = pair_thresholds
+
+    payload["pairs"] = pairs
     return payload

@@ -1,0 +1,54 @@
+# 说明:
+# 1. 这里只放通知阈值, 不放行情质量/暂停之类的运行阈值
+# 2. 空值表示关闭该类通知
+# 3. 百分比推荐直接写 2% 或 0.02, 也兼容 2 % / -1.5 %
+alert_thresholds:
+  AU_XAU:
+    spread_above:
+    spread_below:
+    spread_pct_above:
+    spread_pct_below:
+    zscore_above:
+    zscore_below:
+  AG_XAG_GROSS:
+    spread_above:
+    spread_below:
+    spread_pct_above:
+    spread_pct_below:
+    zscore_above:
+    zscore_below:
+  AG_XAG_NET:
+    spread_above:
+    spread_below:
+    spread_pct_above:
+    spread_pct_below:
+    zscore_above:
+    zscore_below:
+  CU_COPPER_GROSS:
+    spread_above:
+    spread_below:
+    spread_pct_above:
+    spread_pct_below:
+    zscore_above:
+    zscore_below:
+  CU_COPPER_NET:
+    spread_above:
+    spread_below:
+    spread_pct_above:
+    spread_pct_below:
+    zscore_above:
+    zscore_below:
+  BC_COPPER:
+    spread_above:
+    spread_below:
+    spread_pct_above:
+    spread_pct_below:
+    zscore_above:
+    zscore_below:
+  SC_CL:
+    spread_above:
+    spread_below:
+    spread_pct_above:
+    spread_pct_below:
+    zscore_above:
+    zscore_below:

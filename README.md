@@ -40,8 +40,7 @@ sudo apt-get install -y git curl python3 python3-venv python3-pip nginx
 cd /srv
 git clone https://github.com/mintaprapy/cross_market_arbitrage.git
 cd /srv/cross_market_arbitrage
-cp config/monitor.secrets.local.example.yaml config/monitor.secrets.local.yaml
-cp config/monitor.notifiers.local.example.yaml config/monitor.notifiers.local.yaml
+cp config/local.example.yaml config/local.yaml
 ```
 
 3. 创建虚拟环境并安装依赖
@@ -66,20 +65,20 @@ python -m pip install -e ".[tqsdk]"
 
 ```bash
 editor config/monitor.yaml
-editor config/monitor.app.yaml
-editor config/monitor.sources.yaml
-editor config/monitor.pairs.yaml
-editor config/monitor.secrets.local.yaml
-editor config/monitor.notifiers.local.yaml
+editor config/app.yaml
+editor config/sources.yaml
+editor config/pairs.yaml
+editor config/alert_thresholds.yaml
+editor config/local.yaml
 ```
 
 至少确认这些字段：
 
-- `config/monitor.app.yaml` 里的 `sqlite_path / export_dir / domestic_trading_calendar_path`
-- `config/monitor.secrets.local.yaml` 里的 `sources.tqsdk_domestic.params.auth_user`
-- `config/monitor.secrets.local.yaml` 里的 `sources.tqsdk_domestic.params.auth_password`
-- `config/monitor.secrets.local.yaml` 里的 `sources.tqsdk_domestic.params.md_url`（如需要）
-- `config/monitor.notifiers.local.yaml` 里的通知渠道配置
+- `config/app.yaml` 里的 `sqlite_path / export_dir / domestic_trading_calendar_path`
+- `config/local.yaml` 里的 `sources.tqsdk_domestic.params.auth_user`
+- `config/local.yaml` 里的 `sources.tqsdk_domestic.params.auth_password`
+- `config/local.yaml` 里的 `sources.tqsdk_domestic.params.md_url`（如需要）
+- `config/local.yaml` 里的通知渠道配置
 
 5. 执行安装脚本
 
@@ -174,52 +173,51 @@ cross_market_monitor/
 仓库跟踪的是这些真实配置文件：
 
 - [config/monitor.yaml](/Users/m2/Desktop/Codex2026/cross_market_arbitrage/config/monitor.yaml)
-- [config/monitor.app.yaml](/Users/m2/Desktop/Codex2026/cross_market_arbitrage/config/monitor.app.yaml)
-- [config/monitor.sources.yaml](/Users/m2/Desktop/Codex2026/cross_market_arbitrage/config/monitor.sources.yaml)
-- [config/monitor.pairs.yaml](/Users/m2/Desktop/Codex2026/cross_market_arbitrage/config/monitor.pairs.yaml)
-- [config/monitor.notifiers.yaml](/Users/m2/Desktop/Codex2026/cross_market_arbitrage/config/monitor.notifiers.yaml)
+- [config/app.yaml](/Users/m2/Desktop/Codex2026/cross_market_arbitrage/config/app.yaml)
+- [config/sources.yaml](/Users/m2/Desktop/Codex2026/cross_market_arbitrage/config/sources.yaml)
+- [config/pairs.yaml](/Users/m2/Desktop/Codex2026/cross_market_arbitrage/config/pairs.yaml)
+- [config/alert_thresholds.yaml](/Users/m2/Desktop/Codex2026/cross_market_arbitrage/config/alert_thresholds.yaml)
+- [config/notifiers.yaml](/Users/m2/Desktop/Codex2026/cross_market_arbitrage/config/notifiers.yaml)
 - [config/domestic_trading_calendar.cn_futures.2026.yaml](/Users/m2/Desktop/Codex2026/cross_market_arbitrage/config/domestic_trading_calendar.cn_futures.2026.yaml)
 
-仅敏感本地覆盖保留 example：
+本地敏感覆盖保留 example：
 
-- [config/monitor.secrets.local.example.yaml](/Users/m2/Desktop/Codex2026/cross_market_arbitrage/config/monitor.secrets.local.example.yaml)
-- [config/monitor.notifiers.local.example.yaml](/Users/m2/Desktop/Codex2026/cross_market_arbitrage/config/monitor.notifiers.local.example.yaml)
+- [config/local.example.yaml](/Users/m2/Desktop/Codex2026/cross_market_arbitrage/config/local.example.yaml)
 
 本地实际运行使用：
 
 - `config/monitor.yaml`
-- `config/monitor.app.yaml`
-- `config/monitor.sources.yaml`
-- `config/monitor.pairs.yaml`
-- `config/monitor.notifiers.yaml`
-- `config/monitor.secrets.local.yaml`
-- `config/monitor.notifiers.local.yaml`
+- `config/app.yaml`
+- `config/sources.yaml`
+- `config/pairs.yaml`
+- `config/alert_thresholds.yaml`
+- `config/notifiers.yaml`
+- `config/local.yaml`
 
-首次拉代码后只需要按需复制敏感本地覆盖：
+首次拉代码后只需要按需复制本地覆盖：
 
 ```bash
-cp config/monitor.secrets.local.example.yaml config/monitor.secrets.local.yaml
-cp config/monitor.notifiers.local.example.yaml config/monitor.notifiers.local.yaml
+cp config/local.example.yaml config/local.yaml
 ```
 
-只有 `*.local.yaml` 已加入 `.gitignore`，用于保留本地凭证、通知地址和运行参数，不会上传到 GitHub。
+`config/local.yaml` 已加入 `.gitignore`，用于保留本地凭证、通知地址和运行参数，不会上传到 GitHub。
 
-配置现在拆成 5 份：
+配置现在拆成 6 份：
 
 - `config/monitor.yaml`
   只作为入口文件，列出 `imports`
-- `config/monitor.app.yaml`
+- `config/app.yaml`
   负责应用级参数、SQLite、导出目录、轮询周期、交易日历
-- `config/monitor.sources.yaml`
+- `config/sources.yaml`
   负责各数据源和非敏感连接参数
-- `config/monitor.pairs.yaml`
-  负责交易对、路由、阈值、成本模型
-- `config/monitor.notifiers.yaml`
+- `config/pairs.yaml`
+  负责交易对、路由、成本模型和运行阈值
+- `config/alert_thresholds.yaml`
+  只负责告警阈值，空值表示关闭对应通知
+- `config/notifiers.yaml`
   负责非敏感默认通知配置
-- `config/monitor.secrets.local.yaml`
-  负责本地敏感凭证覆盖，比如 `TqSdk` 账号密码
-- `config/monitor.notifiers.local.yaml`
-  负责本地敏感通知渠道覆盖，比如飞书/Telegram/Webhook 连接信息
+- `config/local.yaml`
+  负责本地敏感凭证和通知渠道覆盖，比如 `TqSdk` 账号密码、飞书/Telegram/Webhook 连接信息
 
 ## 运行
 
@@ -253,7 +251,7 @@ python3 -m cross_market_monitor.main run-worker
 python3 -m cross_market_monitor.main run-api
 ```
 
-如果要启用 `TqSdk` 启动回补和历史回补，直接在 `config/monitor.secrets.local.yaml` 里填写：
+如果要启用 `TqSdk` 启动回补和历史回补，直接在 `config/local.yaml` 里填写：
 
 ```yaml
 sources:
@@ -277,7 +275,7 @@ python3 -m cross_market_monitor.tools.tqsdk_connectivity_check \
 
 这个脚本会：
 
-- 自动读取 `config/monitor.secrets.local.yaml` 里的 `TqSdk` 认证信息
+- 自动读取 `config/local.yaml` 里的 `TqSdk` 认证信息
 - 对 `AU / AG / CU / BC / SC` 主连做连接与实时取数测试
 - 输出 JSON 报告到 `data/tqsdk_connectivity/`
 
@@ -292,32 +290,37 @@ python3 -m cross_market_monitor.tools.tqsdk_connectivity_check \
 
 ## 告警阈值与通知
 
-每个交易对都可以单独配置这两个可选阈值：
+告警阈值统一放在 `config/alert_thresholds.yaml`，每个交易组都可以单独配置：
 
 - `spread_alert_above`
   - 当 `理论价差 >= 该值` 时触发
 - `spread_alert_below`
   - 当 `理论价差 <= 该值` 时触发
+- `spread_pct_above`
+  - 当 `价差百分比 >= 该值` 时触发
+- `spread_pct_below`
+  - 当 `价差百分比 <= 该值` 时触发
+- `zscore_above`
+  - 当 `zscore >= 该值` 时触发
+- `zscore_below`
+  - 当 `zscore <= 该值` 时触发
 
-如果字段不填写，或值为 `null`，表示该条件不生效。
+如果字段不填写，或值为 `null`，表示该条件不生效。百分比推荐直接写成 `2%` 或 `0.02`，也兼容 `2 %` 这种带空格写法。
 
 配置示例：
 
 ```yaml
-pairs:
-  - group_name: AU_XAU
-    ...
-    thresholds:
-      spread_pct_abs: 0.02
-      zscore_abs: 2.5
-      spread_alert_above: 25
-      spread_alert_below: -25
-      stale_seconds: 180
-      max_skew_seconds: 180
-      alert_cooldown_seconds: 300
+alert_thresholds:
+  AU_XAU:
+    spread_alert_above: 25
+    spread_alert_below: -25
+    spread_pct_above: 2%
+    spread_pct_below: -1.5%
+    zscore_above: 2.5
+    zscore_below:
 ```
 
-飞书和 Telegram 现在支持按告警类别和交易对过滤：
+通知器现在只按 `min_severity` 和 `group_names` 过滤。只要某个阈值触发了对应告警，就会发送，不需要再在 `notifiers` 里单独配置 `categories`。
 
 ```yaml
 notifiers:
@@ -325,7 +328,6 @@ notifiers:
     kind: feishu
     enabled: true
     min_severity: warning
-    categories: [spread_level]
     group_names: [AU_XAU, SC_CL]
     url: https://open.feishu.cn/open-apis/bot/v2/hook/replace-me
 
@@ -333,7 +335,6 @@ notifiers:
     kind: telegram
     enabled: true
     min_severity: warning
-    categories: [spread_level]
     group_names: [AU_XAU, SC_CL]
     bot_token: replace-me
     chat_id: replace-me
@@ -341,9 +342,8 @@ notifiers:
 
 说明：
 
-- `categories` 不填时，表示不过滤类别
 - `group_names` 不填时，表示不过滤交易对
-- 你当前这个需求，推荐只给飞书 / Telegram 配 `categories: [spread_level]`
+- 如果一个组在 `config/alert_thresholds.yaml` 里填了阈值，命中后就会推送到所有满足 `min_severity / group_names` 的通知器
 
 默认地址：
 
@@ -373,8 +373,7 @@ notifiers:
 
 ```bash
 cd /srv/cross_market_arbitrage
-cp config/monitor.secrets.local.example.yaml config/monitor.secrets.local.yaml
-cp config/monitor.notifiers.local.example.yaml config/monitor.notifiers.local.yaml
+cp config/local.example.yaml config/local.yaml
 python3 -m venv .venv
 . .venv/bin/activate
 python -m pip install --upgrade pip
@@ -426,16 +425,15 @@ python -m pip install -e .
 3. 配置文件
 - 先执行：
 ```bash
-cp config/monitor.secrets.local.example.yaml config/monitor.secrets.local.yaml
-cp config/monitor.notifiers.local.example.yaml config/monitor.notifiers.local.yaml
+cp config/local.example.yaml config/local.yaml
 ```
 - 再检查本地配置：
-  - [config/monitor.app.yaml](/Users/m2/Desktop/Codex2026/cross_market_arbitrage/config/monitor.app.yaml)
-  - [config/monitor.sources.yaml](/Users/m2/Desktop/Codex2026/cross_market_arbitrage/config/monitor.sources.yaml)
-  - [config/monitor.pairs.yaml](/Users/m2/Desktop/Codex2026/cross_market_arbitrage/config/monitor.pairs.yaml)
-  - [config/monitor.notifiers.yaml](/Users/m2/Desktop/Codex2026/cross_market_arbitrage/config/monitor.notifiers.yaml)
-  - [config/monitor.secrets.local.yaml](/Users/m2/Desktop/Codex2026/cross_market_arbitrage/config/monitor.secrets.local.yaml)
-  - [config/monitor.notifiers.local.yaml](/Users/m2/Desktop/Codex2026/cross_market_arbitrage/config/monitor.notifiers.local.yaml)
+  - [config/app.yaml](/Users/m2/Desktop/Codex2026/cross_market_arbitrage/config/app.yaml)
+  - [config/sources.yaml](/Users/m2/Desktop/Codex2026/cross_market_arbitrage/config/sources.yaml)
+  - [config/pairs.yaml](/Users/m2/Desktop/Codex2026/cross_market_arbitrage/config/pairs.yaml)
+  - [config/alert_thresholds.yaml](/Users/m2/Desktop/Codex2026/cross_market_arbitrage/config/alert_thresholds.yaml)
+  - [config/notifiers.yaml](/Users/m2/Desktop/Codex2026/cross_market_arbitrage/config/notifiers.yaml)
+  - [config/local.yaml](/Users/m2/Desktop/Codex2026/cross_market_arbitrage/config/local.yaml)
 
 4. systemd
 ```bash

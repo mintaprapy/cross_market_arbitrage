@@ -42,6 +42,7 @@ cp config/monitor.notifiers.local.example.yaml config/monitor.notifiers.local.ya
 脚本位置：
 
 - /Users/m2/opt/cross_market_arbitrage/scripts/start_macmini.sh
+- /Users/m2/opt/cross_market_arbitrage/scripts/start_macmini_local.sh
 - /Users/m2/opt/cross_market_arbitrage/scripts/stop_macmini.sh
 
 3. 后台启动
@@ -60,8 +61,21 @@ BIND_HOST=0.0.0.0 BIND_PORT=6080 ./scripts/start_macmini.sh
 
 - 启动脚本会先 git pull 最新代码
 - 然后执行 pip install -e ".[tqsdk,parquet]"
+- 启动前会先校验 config/monitor.yaml 语法和加载结果
 - 最后用 nohup 后台启动
 - 默认监听 127.0.0.1:6080
+
+如果你只是修改了本地配置，不想从 GitHub 更新代码：
+
+cd /Users/m2/opt/cross_market_arbitrage
+./scripts/start_macmini_local.sh
+
+这个脚本会：
+
+- 不执行 git pull
+- 不执行 pip install
+- 先校验配置文件
+- 再停止旧进程并后台启动
 
 如果你仍然想手工启动，备用命令如下：
 
@@ -123,6 +137,12 @@ cd /Users/m2/opt/cross_market_arbitrage
 ./scripts/stop_macmini.sh
 ./scripts/start_macmini.sh
 
+如果只是改了本地配置：
+
+cd /Users/m2/opt/cross_market_arbitrage
+./scripts/stop_macmini.sh
+./scripts/start_macmini_local.sh
+
 局域网访问版本：
 
 cd /Users/m2/opt/cross_market_arbitrage
@@ -144,6 +164,7 @@ cd /Users/m2/opt/cross_market_arbitrage
 
 - git pull --ff-only origin main
 - pip install -e ".[tqsdk,parquet]"
+- 配置校验
 - 停旧进程
 - 后台重启
 

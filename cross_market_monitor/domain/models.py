@@ -24,6 +24,7 @@ class ThresholdConfig(BaseModel):
     stale_seconds: int = 120
     max_skew_seconds: int = 120
     alert_cooldown_seconds: int = 300
+    data_quality_alert_delay_sec: int = 30
     fx_jump_abs_pct: float = 0.005
     pause_on_fx_jump: bool = True
     stale_alert_grace_sec: int = 0
@@ -140,6 +141,7 @@ class AppConfig(BaseModel):
     domestic_non_trading_dates_local: list[date] = Field(default_factory=list)
     poll_interval_sec: int = 10
     fx_poll_interval_sec: int = 3600
+    fx_max_age_sec: int = 86400
     history_limit: int = 1000
     rolling_window_size: int = 120
     http_timeout_sec: int = 8

@@ -96,10 +96,7 @@ class SnapshotBuilder:
         fx_age = age_seconds(fx_quote.ts) if fx_quote else None
         max_skew = max_skew_seconds(domestic_quote, overseas_quote, None)
 
-        quality_error = any(
-            error.startswith("data_quality:") or error.startswith("fx: non-positive")
-            for error in errors
-        )
+        quality_error = any(error.startswith("data_quality:") for error in errors)
 
         status = "error"
         if domestic_quote or overseas_quote or fx_quote:
@@ -125,7 +122,7 @@ class SnapshotBuilder:
             if any(
                 value is not None and value > pair.thresholds.stale_seconds
                 for value in (domestic_age, overseas_age)
-            ) or (fx_age is not None and fx_age > fx_stale_seconds):
+            ):
                 status = "stale"
                 errors.append("data_quality: one or more quotes are stale")
             if max_skew is not None and max_skew > pair.thresholds.max_skew_seconds:

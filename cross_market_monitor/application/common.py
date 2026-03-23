@@ -145,6 +145,10 @@ def display_group_name(group_name: str) -> str:
     return base_name
 
 
+def data_quality_group_name(group_name: str) -> str:
+    return variant_group_base(group_name)
+
+
 def infer_product_code(symbol: str) -> str | None:
     mapping = {
         "nf_AU0": "au",

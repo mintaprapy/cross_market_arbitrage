@@ -4,6 +4,7 @@ import asyncio
 import logging
 from datetime import datetime
 
+from cross_market_monitor.application.common import data_quality_group_name
 from cross_market_monitor.application.common import is_within_trading_sessions
 from cross_market_monitor.application.common import display_group_name
 from cross_market_monitor.application.context import ServiceContext
@@ -22,15 +23,15 @@ class AlertService:
         alerts: list[AlertEvent | None] = []
         now = snapshot.ts
 
-        should_emit_stale_alert = snapshot.status != "stale" or self.should_emit_stale_alert(pair, snapshot)
-        if snapshot.status in {"partial", "stale", "error"} and should_emit_stale_alert:
+        should_emit_data_quality_alert = self.should_emit_data_quality_alert(pair, snapshot)
+        if snapshot.status in {"partial", "stale", "error"} and should_emit_data_quality_alert:
             alerts.append(
                 self.make_alert(
                     now,
                     pair.group_name,
                     "data_quality",
                     "critical" if snapshot.status == "error" else "warning",
-                    f"{pair.group_name} data status is {snapshot.status}",
+                    f"{display_group_name(pair.group_name)} data status is {snapshot.status}",
                     {
                         "errors": snapshot.errors,
                         "domestic_age_sec": snapshot.domestic_age_sec,
@@ -56,15 +57,36 @@ class AlertService:
                 )
             )
 
+        if snapshot.fx_age_sec is not None and snapshot.fx_age_sec > self.context.config.app.fx_max_age_sec:
+            alerts.append(
+                self.make_alert(
+                    now,
+                    "FX",
+                    "fx",
+                    "warning",
+                    (
+                        f"USD/CNY FX data is stale "
+                        f"({snapshot.fx_age_sec / 3600:.1f}h old)"
+                    ),
+                    {
+                        "fx_age_sec": snapshot.fx_age_sec,
+                        "fx_rate": snapshot.fx_rate,
+                        "fx_source": snapshot.fx_source,
+                    },
+                )
+            )
+
         if snapshot.fx_rate is None:
             alerts.append(
                 self.make_alert(
                     now,
-                    pair.group_name,
+                    "FX",
                     "fx",
                     "critical",
-                    f"{pair.group_name} FX rate is unavailable",
-                    {},
+                    "USD/CNY FX rate is unavailable",
+                    {
+                        "fx_source": snapshot.fx_source,
+                    },
                 )
             )
 
@@ -283,22 +305,67 @@ class AlertService:
                     f"{pair.group_name} zscore reached {snapshot.zscore:.2f}",
                     {"zscore": snapshot.zscore, "spread": snapshot.spread, "threshold": legacy_abs},
                 )
-            )
+        )
         return [alert for alert in alerts if alert is not None]
 
-    def should_emit_stale_alert(self, pair: PairConfig, snapshot: SpreadSnapshot) -> bool:
-        if snapshot.status != "stale":
+    def should_emit_data_quality_alert(self, pair: PairConfig, snapshot: SpreadSnapshot) -> bool:
+        if snapshot.status == "error":
             return True
+        if snapshot.status not in {"partial", "stale"}:
+            self.clear_issue_started_at(pair.group_name, "data_quality")
+            return True
+        if self.is_fx_only_issue(snapshot):
+            self.clear_issue_started_at(pair.group_name, "data_quality")
+            return False
         if not pair.trading_sessions_local:
-            return True
+            return self.issue_has_reached_delay(pair.group_name, "data_quality", snapshot.ts, pair.thresholds.data_quality_alert_delay_sec)
         local_dt = snapshot.ts.astimezone(self.context.local_tz)
-        return is_within_trading_sessions(
+        if not is_within_trading_sessions(
             local_dt,
             pair.trading_sessions_local,
             grace_sec=pair.thresholds.stale_alert_grace_sec,
             non_trading_dates=self.context.config.app.domestic_non_trading_dates_local,
             weekends_closed=self.context.config.app.domestic_weekends_closed,
+        ):
+            self.clear_issue_started_at(pair.group_name, "data_quality")
+            return False
+        return self.issue_has_reached_delay(
+            pair.group_name,
+            "data_quality",
+            snapshot.ts,
+            pair.thresholds.data_quality_alert_delay_sec,
         )
+
+    def is_fx_only_issue(self, snapshot: SpreadSnapshot) -> bool:
+        non_fx_errors = [error for error in snapshot.errors if not error.startswith("fx:")]
+        if snapshot.fx_rate is None:
+            return not non_fx_errors
+        if snapshot.fx_age_sec is not None and snapshot.fx_age_sec > self.context.config.app.fx_max_age_sec:
+            return not non_fx_errors
+        return False
+
+    def issue_has_reached_delay(
+        self,
+        group_name: str,
+        category: str,
+        now: datetime,
+        delay_sec: int,
+    ) -> bool:
+        key = (self.issue_group_key(group_name, category), category)
+        started_at = self.context.issue_started_at.get(key)
+        if started_at is None:
+            self.context.issue_started_at[key] = now
+            return delay_sec <= 0
+        return (now - started_at).total_seconds() >= delay_sec
+
+    def clear_issue_started_at(self, group_name: str, category: str) -> None:
+        key = (self.issue_group_key(group_name, category), category)
+        self.context.issue_started_at.pop(key, None)
+
+    def issue_group_key(self, group_name: str, category: str) -> str:
+        if category == "data_quality":
+            return data_quality_group_name(group_name)
+        return group_name
 
     def make_alert(
         self,
@@ -309,13 +376,13 @@ class AlertService:
         message: str,
         metadata: dict,
     ) -> AlertEvent | None:
-        key = (group_name, category)
+        key = (self.issue_group_key(group_name, category), category)
         previous = self.context.cooldowns.get(key)
         cooldown = next(
             (
                 pair.thresholds.alert_cooldown_seconds
                 for pair in self.context.config.pairs
-                if pair.group_name == group_name
+                if pair.group_name == group_name or data_quality_group_name(pair.group_name) == group_name
             ),
             300,
         )

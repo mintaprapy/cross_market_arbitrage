@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from cross_market_monitor.application.common import display_group_name
 from cross_market_monitor.domain.models import AlertEvent, NotifierConfig
 from cross_market_monitor.infrastructure.http_client import HttpClient
 
@@ -123,9 +124,10 @@ class TelegramNotifier(BaseNotifier):
 
 
 def alert_payload(alert: AlertEvent) -> dict:
+    title_group_name = display_group_name(alert.group_name) if alert.category == "data_quality" else alert.group_name
     return {
         "timestamp": alert.ts.isoformat(),
-        "title": f"{alert.group_name} {alert.category} {alert.severity}",
+        "title": f"{title_group_name} {alert.category} {alert.severity}",
         "group_name": alert.group_name,
         "category": alert.category,
         "severity": alert.severity,
@@ -137,8 +139,9 @@ def alert_payload(alert: AlertEvent) -> dict:
 def human_notification_text(alert: AlertEvent) -> str:
     if alert.category in {"spread_level", "spread_pct"}:
         return alert.message
+    group_name = display_group_name(alert.group_name) if alert.category == "data_quality" else alert.group_name
     return (
-        f"[{alert.severity.upper()}] {alert.group_name} {alert.category}\n"
+        f"[{alert.severity.upper()}] {group_name} {alert.category}\n"
         f"{alert.message}\n"
         f"{alert.ts.isoformat()}"
     )

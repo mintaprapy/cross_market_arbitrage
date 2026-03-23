@@ -45,6 +45,7 @@ class ServiceContext:
     shadow_stop_event: threading.Event = field(default_factory=threading.Event)
     shadow_thread: threading.Thread | None = None
     cooldowns: dict[tuple[str, str], datetime] = field(default_factory=dict)
+    issue_started_at: dict[tuple[str, str], datetime] = field(default_factory=dict)
     default_history_range_key: str = DEFAULT_HISTORY_RANGE_KEY
     history_preview_limit: int = 240
     history_card_limit: int = 900

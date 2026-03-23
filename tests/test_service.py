@@ -1028,6 +1028,112 @@ class MonitorServiceTests(unittest.TestCase):
             alerts = service.alert_service.evaluate_alerts(pair, snapshot)
             self.assertEqual(alerts, [])
 
+    def test_suppresses_stale_alert_immediately_after_session_close_by_default(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repository = SQLiteRepository(f"{tmp_dir}/monitor.db")
+            config = MonitorConfig.model_validate(
+                {
+                    "app": {
+                        "name": "test",
+                        "fx_source": "fx",
+                        "sqlite_path": f"{tmp_dir}/monitor.db",
+                    },
+                    "sources": {
+                        "domestic": {"kind": "mock_quote", "base_url": "http://local"},
+                        "overseas": {"kind": "mock_quote", "base_url": "http://local"},
+                        "fx": {"kind": "mock_fx", "base_url": "http://local"},
+                    },
+                    "pairs": [
+                        {
+                            "group_name": "AU_XAU_TEST",
+                            "domestic_source": "domestic",
+                            "domestic_symbol": "nf_AU0",
+                            "domestic_label": "AU Main",
+                            "overseas_source": "overseas",
+                            "overseas_symbol": "XAUUSDT",
+                            "overseas_label": "Binance XAU",
+                            "formula": "gold",
+                            "domestic_unit": "CNY_PER_GRAM",
+                            "target_unit": "USD_PER_OUNCE",
+                            "trading_sessions_local": ["09:00-11:30"],
+                        }
+                    ],
+                }
+            )
+            service = MonitorService(config, repository)
+            pair = service.config.pairs[0]
+            snapshot = SpreadSnapshot(
+                ts=datetime(2026, 3, 13, 3, 35, tzinfo=UTC),
+                group_name="AU_XAU_TEST",
+                domestic_symbol="nf_AU0",
+                overseas_symbol="XAUUSDT",
+                fx_source="fx",
+                fx_rate=6.9,
+                formula="gold",
+                formula_version="v1",
+                tax_mode="gross",
+                target_unit="USD_PER_OUNCE",
+                status="stale",
+                errors=["data_quality: one or more quotes are stale"],
+            )
+
+            alerts = service.alert_service.evaluate_alerts(pair, snapshot)
+            self.assertEqual(alerts, [])
+
+    def test_can_opt_in_to_post_close_stale_alert_grace(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repository = SQLiteRepository(f"{tmp_dir}/monitor.db")
+            config = MonitorConfig.model_validate(
+                {
+                    "app": {
+                        "name": "test",
+                        "fx_source": "fx",
+                        "sqlite_path": f"{tmp_dir}/monitor.db",
+                    },
+                    "sources": {
+                        "domestic": {"kind": "mock_quote", "base_url": "http://local"},
+                        "overseas": {"kind": "mock_quote", "base_url": "http://local"},
+                        "fx": {"kind": "mock_fx", "base_url": "http://local"},
+                    },
+                    "pairs": [
+                        {
+                            "group_name": "AU_XAU_TEST",
+                            "domestic_source": "domestic",
+                            "domestic_symbol": "nf_AU0",
+                            "domestic_label": "AU Main",
+                            "overseas_source": "overseas",
+                            "overseas_symbol": "XAUUSDT",
+                            "overseas_label": "Binance XAU",
+                            "formula": "gold",
+                            "domestic_unit": "CNY_PER_GRAM",
+                            "target_unit": "USD_PER_OUNCE",
+                            "trading_sessions_local": ["09:00-11:30"],
+                            "thresholds": {"stale_alert_grace_sec": 600},
+                        }
+                    ],
+                }
+            )
+            service = MonitorService(config, repository)
+            pair = service.config.pairs[0]
+            snapshot = SpreadSnapshot(
+                ts=datetime(2026, 3, 13, 3, 35, tzinfo=UTC),
+                group_name="AU_XAU_TEST",
+                domestic_symbol="nf_AU0",
+                overseas_symbol="XAUUSDT",
+                fx_source="fx",
+                fx_rate=6.9,
+                formula="gold",
+                formula_version="v1",
+                tax_mode="gross",
+                target_unit="USD_PER_OUNCE",
+                status="stale",
+                errors=["data_quality: one or more quotes are stale"],
+            )
+
+            alerts = service.alert_service.evaluate_alerts(pair, snapshot)
+            self.assertEqual(len(alerts), 1)
+            self.assertEqual(alerts[0].category, "data_quality")
+
     def test_retention_service_prunes_old_rows_and_keeps_latest_snapshot(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             repository = SQLiteRepository(f"{tmp_dir}/monitor.db")

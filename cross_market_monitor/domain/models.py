@@ -26,7 +26,7 @@ class ThresholdConfig(BaseModel):
     alert_cooldown_seconds: int = 300
     fx_jump_abs_pct: float = 0.005
     pause_on_fx_jump: bool = True
-    stale_alert_grace_sec: int = 900
+    stale_alert_grace_sec: int = 0
 
     @field_validator(
         "spread_pct_abs",

@@ -14,26 +14,31 @@ class HyperliquidAdapter:
         self.http_client = http_client
 
     def fetch_quote(self, symbol: str, label: str) -> MarketQuote:
+        resolved_symbol = _resolve_symbol(symbol, self.source_config)
+        meta_payload = {"type": "metaAndAssetCtxs"}
+        dex = self.source_config.params.get("dex")
+        if dex:
+            meta_payload["dex"] = dex
         payload = json.loads(
             self.http_client.post_json(
                 f"{self.source_config.base_url}/info",
-                {"type": "metaAndAssetCtxs"},
+                meta_payload,
                 headers=self.source_config.headers,
             )
         )
         meta, contexts = payload
         index = next(
-            (idx for idx, item in enumerate(meta["universe"]) if item["name"] == symbol),
+            (idx for idx, item in enumerate(meta["universe"]) if item["name"] == resolved_symbol),
             None,
         )
         if index is None:
-            raise ValueError(f"Hyperliquid symbol {symbol} was not found in universe")
+            raise ValueError(f"Hyperliquid symbol {resolved_symbol} was not found in universe")
 
         context = contexts[index]
         book_payload = json.loads(
             self.http_client.post_json(
                 f"{self.source_config.base_url}/info",
-                {"type": "l2Book", "coin": symbol},
+                {"type": "l2Book", "coin": resolved_symbol},
                 headers=self.source_config.headers,
             )
         )
@@ -44,7 +49,7 @@ class HyperliquidAdapter:
 
         return MarketQuote(
             source_name=self.source_name,
-            symbol=symbol,
+            symbol=resolved_symbol,
             label=label,
             ts=_parse_ms_timestamp(book_payload.get("time")),
             last=last,
@@ -78,3 +83,10 @@ def _parse_ms_timestamp(raw: str | int | None) -> datetime:
     if text.isdigit():
         return datetime.fromtimestamp(int(text) / 1000, tz=UTC)
     return datetime.now(UTC)
+
+
+def _resolve_symbol(symbol: str, source_config: SourceConfig) -> str:
+    dex = source_config.params.get("dex")
+    if dex and ":" not in symbol:
+        return f"{dex}:{symbol}"
+    return symbol

@@ -126,6 +126,7 @@
       binance_futures: "Binance 永续",
       cme_reference: "CME 参考",
       frankfurter_fx: "Frankfurter 汇率",
+      gate_futures: "Gate 永续",
       hyperliquid: "Hyperliquid",
       open_er_api_fx: "Open ER 汇率",
       okx_swap: "OKX 永续",
@@ -309,6 +310,7 @@
       if (value.includes("sina")) return "新浪期货";
       if (value.includes("tqsdk")) return "TqSdk 主连";
       if (value.includes("binance")) return "Binance 永续";
+      if (value.includes("gate")) return "Gate 永续";
       if (value.includes("okx")) return "OKX 永续";
       if (value.includes("hyperliquid")) return "Hyperliquid";
       if (value.includes("cme")) return "CME 参考";
@@ -978,6 +980,12 @@
       return unit ? `${formatted} ${unit}` : formatted;
     }
 
+    function formatDomesticLotNotional(item) {
+      const numeric = toFiniteNumber(item?.domestic_lot_notional);
+      if (numeric === null) return "--";
+      return formatTableNumber(numeric, 0);
+    }
+
     function buildInstrumentRow(cardGroup, domesticPreference, overseasPreference) {
       if (!cardGroup || !cardGroup.selected_item) {
         return "";
@@ -995,6 +1003,7 @@
             </a>
           </td>
           <td class="numeric-cell"><div class="summary-lines">${buildVariantValueLines(cardGroup, (variant) => formatTableNumber(variant.domestic_last_raw, domesticPriceDigits(variant)))}</div></td>
+          <td class="numeric-cell"><div class="summary-lines">${buildVariantValueLines(cardGroup, (variant) => formatDomesticLotNotional(variant))}</div></td>
           <td class="numeric-cell"><div class="summary-lines">${buildVariantValueLines(cardGroup, (variant) => formatTableNumber(variant.normalized_last, 2))}</div></td>
           <td class="numeric-cell"><div class="summary-lines">${buildVariantValueLines(cardGroup, (variant) => formatTableNumber(variant.overseas_last, 2))}</div></td>
           <td class="numeric-cell"><div class="summary-lines">${buildVariantValueLines(cardGroup, (variant) => formatHedgePosition(variant))}</div></td>
@@ -1014,7 +1023,7 @@
       ).filter(Boolean);
       document.getElementById("instrument-summary").innerHTML = rows.length
         ? rows.join("")
-        : `<tr><td colspan="7" class="muted">等待第一轮轮询完成后展示标的概览。</td></tr>`;
+        : `<tr><td colspan="8" class="muted">等待第一轮轮询完成后展示标的概览。</td></tr>`;
     }
 
     function buildVariantSelector(cardGroup) {

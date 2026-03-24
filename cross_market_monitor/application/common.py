@@ -120,7 +120,9 @@ def default_overseas_symbol(pair: PairConfig) -> str:
     source_priority = {
         "binance_futures": 0,
         "okx_swap": 1,
-        "hyperliquid": 2,
+        "gate_futures": 2,
+        "hyperliquid": 3,
+        "hyperliquid_xyz": 4,
     }
     enabled_candidates = [candidate for candidate in candidates if candidate.enabled]
     pool = enabled_candidates or candidates

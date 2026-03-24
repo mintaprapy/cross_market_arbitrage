@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 
 from cross_market_monitor.domain.models import SourceConfig
 from cross_market_monitor.infrastructure.marketdata.binance import BinanceFuturesAdapter
+from cross_market_monitor.infrastructure.marketdata.gate import GateFuturesAdapter
 from cross_market_monitor.infrastructure.marketdata.okx import OkxSwapAdapter
 
 
@@ -53,6 +54,29 @@ class FakeOkxHttpClient:
         return {"code": "0", "data": data}
 
 
+class FakeGateHttpClient:
+    def __init__(self) -> None:
+        self.calls: list[dict[str, str]] = []
+
+    def get_text(self, url: str, *, headers=None, params=None) -> str:
+        del url, headers
+        assert params is not None
+        self.calls.append(dict(params))
+        start = params.get("from")
+        if start == "1711929600":
+            payload = [
+                {"t": 1711929600, "c": "10.5"},
+                {"t": 1711933200, "c": "11.5"},
+            ]
+        elif start == "1711936800":
+            payload = [
+                {"t": 1711936800, "c": "12.5"},
+            ]
+        else:
+            payload = []
+        return json.dumps(payload)
+
+
 class OverseasHistoryAdapterTests(unittest.TestCase):
     def test_binance_fetch_history_paginates_forward_and_returns_sorted_rows(self) -> None:
         adapter = BinanceFuturesAdapter(
@@ -100,6 +124,29 @@ class OverseasHistoryAdapterTests(unittest.TestCase):
         self.assertEqual(rows[0].ts, datetime(2024, 4, 1, 0, 0, tzinfo=UTC))
         self.assertEqual(rows[-1].ts, datetime(2024, 4, 1, 2, 0, tzinfo=UTC))
         self.assertEqual(rows[1].last, 11.5)
+
+    def test_gate_fetch_history_paginates_forward_and_returns_sorted_rows(self) -> None:
+        adapter = GateFuturesAdapter(
+            "gate_futures",
+            SourceConfig(
+                kind="gate_futures",
+                base_url="https://api.gateio.ws",
+                params={"settle": "usdt", "history_page_limit": "2", "history_max_pages": "3"},
+            ),
+            FakeGateHttpClient(),
+        )
+
+        rows = adapter.fetch_history(
+            "XAU_USDT",
+            "Gate XAU",
+            interval="60m",
+            start_ts=datetime(2024, 4, 1, 0, 0, tzinfo=UTC),
+            end_ts=datetime(2024, 4, 1, 2, 0, tzinfo=UTC),
+        )
+
+        self.assertEqual(len(rows), 3)
+        self.assertEqual(rows[0].ts, datetime(2024, 4, 1, 0, 0, tzinfo=UTC))
+        self.assertEqual(rows[-1].last, 12.5)
 
 
 if __name__ == "__main__":

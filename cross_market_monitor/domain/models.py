@@ -107,6 +107,7 @@ class PairConfig(BaseModel):
     domestic_candidates: list[QuoteRouteConfig] = Field(default_factory=list)
     overseas_candidates: list[QuoteRouteConfig] = Field(default_factory=list)
     hedge_contract_size: float | None = None
+    domestic_lot_size: float | None = None
     domestic_product_code: str | None = None
     trading_sessions_local: list[str] = Field(default_factory=list)
 
@@ -119,6 +120,7 @@ class SourceConfig(BaseModel):
         "tqsdk_main",
         "okx_swap",
         "binance_futures",
+        "gate_futures",
         "hyperliquid",
         "cme_reference",
         "frankfurter_fx",

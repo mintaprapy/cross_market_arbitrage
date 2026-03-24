@@ -97,6 +97,12 @@ class QueryService:
         payload = snapshot.model_dump(mode="json")
         pair = self.context.pair_map.get(snapshot.group_name)
         payload["hedge_contract_size"] = pair.hedge_contract_size if pair is not None else None
+        payload["domestic_lot_size"] = pair.domestic_lot_size if pair is not None else None
+        payload["domestic_lot_notional"] = (
+            snapshot.domestic_last_raw * pair.domestic_lot_size
+            if pair is not None and pair.domestic_lot_size is not None and snapshot.domestic_last_raw is not None
+            else None
+        )
         payload["trading_sessions_local"] = list(pair.trading_sessions_local) if pair is not None else []
         payload["domestic_weekends_closed"] = self.context.config.app.domestic_weekends_closed
         payload["domestic_non_trading_dates_local"] = [

@@ -19,11 +19,18 @@ pairs:
       - source: okx_swap
         symbol: XAU-USDT-SWAP
         label: OKX XAU Swap
+      - source: gate_futures
+        symbol: XAU_USDT
+        label: Gate XAU_USDT Perpetual
+      - source: hyperliquid_xyz
+        symbol: xyz:GOLD
+        label: Hyperliquid XYZ GOLD
     formula: gold
     target_unit: USD_PER_OUNCE
     domestic_unit: CNY_PER_GRAM
     tax_mode: gross
     hedge_contract_size: 32.1507
+    domestic_lot_size: 1000
     trading_sessions_local: ["09:00-10:15", "10:30-11:30", "13:30-15:00", "21:00-02:30"]
     thresholds:
       stale_seconds: 180
@@ -59,11 +66,18 @@ pairs:
       - source: okx_swap
         symbol: XAG-USDT-SWAP
         label: OKX XAG Swap
+      - source: gate_futures
+        symbol: XAG_USDT
+        label: Gate XAG_USDT Perpetual
+      - source: hyperliquid_xyz
+        symbol: xyz:SILVER
+        label: Hyperliquid XYZ SILVER
     formula: silver
     target_unit: USD_PER_OUNCE
     domestic_unit: CNY_PER_KG
     tax_mode: gross
     hedge_contract_size: 482.2612
+    domestic_lot_size: 15
     trading_sessions_local: ["09:00-10:15", "10:30-11:30", "13:30-15:00", "21:00-02:30"]
     thresholds:
       stale_seconds: 180
@@ -99,11 +113,18 @@ pairs:
       - source: okx_swap
         symbol: XAG-USDT-SWAP
         label: OKX XAG Swap
+      - source: gate_futures
+        symbol: XAG_USDT
+        label: Gate XAG_USDT Perpetual
+      - source: hyperliquid_xyz
+        symbol: xyz:SILVER
+        label: Hyperliquid XYZ SILVER
     formula: silver
     target_unit: USD_PER_OUNCE
     domestic_unit: CNY_PER_KG
     tax_mode: net
     hedge_contract_size: 482.2612
+    domestic_lot_size: 15
     trading_sessions_local: ["09:00-10:15", "10:30-11:30", "13:30-15:00", "21:00-02:30"]
     thresholds:
       stale_seconds: 180
@@ -139,11 +160,18 @@ pairs:
       - source: okx_swap
         symbol: XCU-USDT-SWAP
         label: OKX XCU Swap
+      - source: gate_futures
+        symbol: XCU_USDT
+        label: Gate XCU_USDT Perpetual
+      - source: hyperliquid_xyz
+        symbol: xyz:COPPER
+        label: Hyperliquid XYZ COPPER
     formula: copper
     target_unit: USD_PER_POUND
     domestic_unit: CNY_PER_TON
     tax_mode: gross
     hedge_contract_size: 11023.1131
+    domestic_lot_size: 5
     trading_sessions_local: ["09:00-10:15", "10:30-11:30", "13:30-15:00", "21:00-01:00"]
     thresholds:
       stale_seconds: 180
@@ -179,11 +207,18 @@ pairs:
       - source: okx_swap
         symbol: XCU-USDT-SWAP
         label: OKX XCU Swap
+      - source: gate_futures
+        symbol: XCU_USDT
+        label: Gate XCU_USDT Perpetual
+      - source: hyperliquid_xyz
+        symbol: xyz:COPPER
+        label: Hyperliquid XYZ COPPER
     formula: copper
     target_unit: USD_PER_POUND
     domestic_unit: CNY_PER_TON
     tax_mode: net
     hedge_contract_size: 11023.1131
+    domestic_lot_size: 5
     trading_sessions_local: ["09:00-10:15", "10:30-11:30", "13:30-15:00", "21:00-01:00"]
     thresholds:
       stale_seconds: 180
@@ -224,6 +259,7 @@ pairs:
     domestic_unit: CNY_PER_TON
     tax_mode: gross
     hedge_contract_size: 11023.1131
+    domestic_lot_size: 5
     trading_sessions_local: ["09:00-10:15", "10:30-11:30", "13:30-15:00", "21:00-01:00"]
     thresholds:
       stale_seconds: 180
@@ -256,19 +292,22 @@ pairs:
       - source: okx_swap
         symbol: CL-USDT-SWAP
         label: OKX CL Swap
+      - source: gate_futures
+        symbol: XTI_USDT
+        label: Gate XTI_USDT Perpetual
+      - source: hyperliquid_xyz
+        symbol: xyz:CL
+        label: Hyperliquid XYZ CL
       - source: cme_nymex
         symbol: "425"
         label: CME NYMEX CL Reference
-        enabled: false
-      - source: hyperliquid
-        symbol: CL
-        label: Hyperliquid CL
         enabled: false
     formula: crude_oil
     target_unit: USD_PER_BARREL
     domestic_unit: CNY_PER_BARREL
     tax_mode: gross
     hedge_contract_size: 1000
+    domestic_lot_size: 1000
     trading_sessions_local: ["09:00-10:15", "10:30-11:30", "13:30-15:00", "21:00-02:30"]
     thresholds:
       stale_seconds: 180

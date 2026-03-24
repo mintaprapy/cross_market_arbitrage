@@ -33,10 +33,24 @@ sources:
     kind: okx_swap
     base_url: https://www.okx.com
     verify_ssl: true
+  gate_futures:
+    kind: gate_futures
+    base_url: https://api.gateio.ws
+    verify_ssl: true
+    params:
+      settle: usdt
+      history_page_limit: "1000"
+      history_max_pages: "8"
   hyperliquid:
     kind: hyperliquid
     base_url: https://api.hyperliquid.xyz
     verify_ssl: true
+  hyperliquid_xyz:
+    kind: hyperliquid
+    base_url: https://api.hyperliquid.xyz
+    verify_ssl: true
+    params:
+      dex: xyz
   cme_nymex:
     kind: cme_reference
     base_url: https://www.cmegroup.com/CmeWS/mvc/Quotes/Future

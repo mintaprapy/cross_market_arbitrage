@@ -364,6 +364,7 @@ class MonitorServiceTests(unittest.TestCase):
                             "domestic_unit": "CNY_PER_GRAM",
                             "target_unit": "USD_PER_OUNCE",
                             "hedge_contract_size": 32.1507,
+                            "domestic_lot_size": 1000,
                         }
                     ],
                 }
@@ -376,6 +377,11 @@ class MonitorServiceTests(unittest.TestCase):
             self.assertEqual(len(payload["snapshots"]), 1)
             self.assertEqual(payload["snapshots"][0]["group_name"], "AU_XAU_TEST")
             self.assertEqual(payload["snapshots"][0]["hedge_contract_size"], 32.1507)
+            self.assertEqual(payload["snapshots"][0]["domestic_lot_size"], 1000)
+            self.assertEqual(
+                payload["snapshots"][0]["domestic_lot_notional"],
+                payload["snapshots"][0]["domestic_last_raw"] * 1000,
+            )
 
     def test_card_view_exposes_trading_sessions_for_chart_filtering(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

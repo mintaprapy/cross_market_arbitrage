@@ -52,3 +52,17 @@ alert_thresholds:
     spread_pct_below:
     zscore_above:
     zscore_below:
+  CF_COTTON:
+    spread_above:
+    spread_below:
+    spread_pct_above:
+    spread_pct_below:
+    zscore_above:
+    zscore_below:
+  SR_SUGAR:
+    spread_above:
+    spread_below:
+    spread_pct_above:
+    spread_pct_below:
+    zscore_above:
+    zscore_below:

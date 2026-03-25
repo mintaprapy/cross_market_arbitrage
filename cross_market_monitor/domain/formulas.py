@@ -33,6 +33,12 @@ def normalize_domestic_price(raw_price: float | None, pair: PairConfig, usd_cny:
     if pair.formula == "crude_oil":
         return raw_price / usd_cny
 
+    if pair.formula == "cotton":
+        return raw_price / usd_cny / POUNDS_PER_METRIC_TON
+
+    if pair.formula == "sugar":
+        return raw_price / usd_cny / POUNDS_PER_METRIC_TON
+
     raise ValueError(f"Unsupported formula: {pair.formula}")
 
 

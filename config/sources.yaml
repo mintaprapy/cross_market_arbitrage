@@ -41,6 +41,12 @@ sources:
       settle: usdt
       history_page_limit: "1000"
       history_max_pages: "8"
+  gate_tradfi:
+    kind: gate_tradfi
+    base_url: https://api.gateio.ws
+    verify_ssl: true
+    params:
+      history_limit: "500"
   hyperliquid:
     kind: hyperliquid
     base_url: https://api.hyperliquid.xyz

@@ -92,6 +92,8 @@
       CU_COPPER_NET: "铜 CU / COPPER",
       BC_COPPER: "国际铜 BC / COPPER",
       SC_CL: "原油 SC / CL",
+      CF_COTTON: "棉花 CF / COTTON",
+      SR_SUGAR: "白糖 SR / SUGAR",
     };
 
     const STATUS_LABELS = {
@@ -127,6 +129,7 @@
       cme_reference: "CME 参考",
       frankfurter_fx: "Frankfurter 汇率",
       gate_futures: "Gate 永续",
+      gate_tradfi: "Gate TradFi",
       hyperliquid: "Hyperliquid",
       open_er_api_fx: "Open ER 汇率",
       okx_swap: "OKX 永续",
@@ -141,6 +144,8 @@
       silver: "白银 -> USD/oz",
       copper: "铜 -> USD/lb",
       crude_oil: "原油 -> USD/bbl",
+      cotton: "棉花 -> USD/lb",
+      sugar: "白糖 -> USD/lb",
     };
 
     const TARGET_UNIT_ABBREVIATIONS = {
@@ -160,7 +165,7 @@
       },
     };
 
-    const CARD_DISPLAY_ORDER = ["AU_XAU", "AG_XAG", "CU_COPPER", "BC_COPPER", "SC_CL"];
+    const CARD_DISPLAY_ORDER = ["AU_XAU", "AG_XAG", "CU_COPPER", "BC_COPPER", "SC_CL", "CF_COTTON", "SR_SUGAR"];
 
     const CARD_SELECTION_STORAGE_KEY = "cross-market-card-selection-v5";
     const HISTORY_RANGE_STORAGE_KEY = "cross-market-history-range-v1";
@@ -310,6 +315,7 @@
       if (value.includes("sina")) return "新浪期货";
       if (value.includes("tqsdk")) return "TqSdk 主连";
       if (value.includes("binance")) return "Binance 永续";
+      if (value.includes("gate_tradfi")) return "Gate TradFi";
       if (value.includes("gate")) return "Gate 永续";
       if (value.includes("okx")) return "OKX 永续";
       if (value.includes("hyperliquid")) return "Hyperliquid";

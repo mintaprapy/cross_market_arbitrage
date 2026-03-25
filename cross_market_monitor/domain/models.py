@@ -96,7 +96,7 @@ class PairConfig(BaseModel):
     overseas_source: str
     overseas_symbol: str
     overseas_label: str
-    formula: Literal["gold", "silver", "copper", "crude_oil"]
+    formula: Literal["gold", "silver", "copper", "crude_oil", "cotton", "sugar"]
     formula_version: str = "2026-03-13-v1"
     domestic_unit: DomesticUnit
     target_unit: TargetUnit
@@ -121,6 +121,7 @@ class SourceConfig(BaseModel):
         "okx_swap",
         "binance_futures",
         "gate_futures",
+        "gate_tradfi",
         "hyperliquid",
         "cme_reference",
         "frankfurter_fx",

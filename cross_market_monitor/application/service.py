@@ -24,6 +24,7 @@ from cross_market_monitor.infrastructure.marketdata.binance import BinanceFuture
 from cross_market_monitor.infrastructure.marketdata.cme import CmeReferenceAdapter
 from cross_market_monitor.infrastructure.marketdata.frankfurter import FrankfurterFxAdapter
 from cross_market_monitor.infrastructure.marketdata.gate import GateFuturesAdapter
+from cross_market_monitor.infrastructure.marketdata.gate_tradfi import GateTradFiAdapter
 from cross_market_monitor.infrastructure.marketdata.hyperliquid import HyperliquidAdapter
 from cross_market_monitor.infrastructure.marketdata.open_er_api import OpenErApiFxAdapter
 from cross_market_monitor.infrastructure.marketdata.okx import OkxSwapAdapter
@@ -87,6 +88,8 @@ def _build_adapter(source_name: str, source_config: SourceConfig, timeout_sec: i
         return BinanceFuturesAdapter(source_name, source_config, http_client)
     if source_config.kind == "gate_futures":
         return GateFuturesAdapter(source_name, source_config, http_client)
+    if source_config.kind == "gate_tradfi":
+        return GateTradFiAdapter(source_name, source_config, http_client)
     if source_config.kind == "hyperliquid":
         return HyperliquidAdapter(source_name, source_config, http_client)
     if source_config.kind == "cme_reference":

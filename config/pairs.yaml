@@ -22,6 +22,9 @@ pairs:
       - source: gate_futures
         symbol: XAU_USDT
         label: Gate XAU_USDT Perpetual
+      - source: gate_tradfi
+        symbol: XAUUSD
+        label: Gate TradFi XAUUSD
       - source: hyperliquid_xyz
         symbol: xyz:GOLD
         label: Hyperliquid XYZ GOLD
@@ -69,6 +72,9 @@ pairs:
       - source: gate_futures
         symbol: XAG_USDT
         label: Gate XAG_USDT Perpetual
+      - source: gate_tradfi
+        symbol: XAGUSD
+        label: Gate TradFi XAGUSD
       - source: hyperliquid_xyz
         symbol: xyz:SILVER
         label: Hyperliquid XYZ SILVER
@@ -116,6 +122,9 @@ pairs:
       - source: gate_futures
         symbol: XAG_USDT
         label: Gate XAG_USDT Perpetual
+      - source: gate_tradfi
+        symbol: XAGUSD
+        label: Gate TradFi XAGUSD
       - source: hyperliquid_xyz
         symbol: xyz:SILVER
         label: Hyperliquid XYZ SILVER
@@ -295,6 +304,12 @@ pairs:
       - source: gate_futures
         symbol: XTI_USDT
         label: Gate XTI_USDT Perpetual
+      - source: gate_tradfi
+        symbol: XTIUSD
+        label: Gate TradFi XTIUSD
+      - source: gate_tradfi
+        symbol: XBRUSD
+        label: Gate TradFi XBRUSD
       - source: hyperliquid_xyz
         symbol: xyz:CL
         label: Hyperliquid XYZ CL
@@ -320,5 +335,77 @@ pairs:
       overseas_fee_bps: 1.0
       domestic_slippage_bps: 2.0
       overseas_slippage_bps: 1.8
+      funding_bps_per_day: 0.5
+      holding_hours: 24
+
+  - group_name: CF_COTTON
+    domestic_source: sina_domestic
+    domestic_symbol: nf_CF0
+    domestic_label: CZCE CF Continuous
+    overseas_source: gate_tradfi
+    overseas_symbol: COTTON
+    overseas_label: Gate TradFi COTTON
+    domestic_candidates:
+      - source: sina_domestic
+        symbol: nf_CF0
+        label: CZCE CF Continuous
+    overseas_candidates:
+      - source: gate_tradfi
+        symbol: COTTON
+        label: Gate TradFi COTTON
+    formula: cotton
+    target_unit: USD_PER_POUND
+    domestic_unit: CNY_PER_TON
+    tax_mode: gross
+    hedge_contract_size: 11023.1131
+    domestic_lot_size: 5
+    trading_sessions_local: ["09:00-10:15", "10:30-11:30", "13:30-15:00", "21:00-23:00"]
+    thresholds:
+      stale_seconds: 180
+      max_skew_seconds: 180
+      alert_cooldown_seconds: 300
+      fx_jump_abs_pct: 0.005
+      pause_on_fx_jump: true
+    costs:
+      domestic_fee_bps: 1.0
+      overseas_fee_bps: 1.2
+      domestic_slippage_bps: 1.5
+      overseas_slippage_bps: 1.5
+      funding_bps_per_day: 0.5
+      holding_hours: 24
+
+  - group_name: SR_SUGAR
+    domestic_source: sina_domestic
+    domestic_symbol: nf_SR0
+    domestic_label: CZCE SR Continuous
+    overseas_source: gate_tradfi
+    overseas_symbol: SUGAR
+    overseas_label: Gate TradFi SUGAR
+    domestic_candidates:
+      - source: sina_domestic
+        symbol: nf_SR0
+        label: CZCE SR Continuous
+    overseas_candidates:
+      - source: gate_tradfi
+        symbol: SUGAR
+        label: Gate TradFi SUGAR
+    formula: sugar
+    target_unit: USD_PER_POUND
+    domestic_unit: CNY_PER_TON
+    tax_mode: gross
+    hedge_contract_size: 22046.2262
+    domestic_lot_size: 10
+    trading_sessions_local: ["09:00-10:15", "10:30-11:30", "13:30-15:00", "21:00-23:00"]
+    thresholds:
+      stale_seconds: 180
+      max_skew_seconds: 180
+      alert_cooldown_seconds: 300
+      fx_jump_abs_pct: 0.005
+      pause_on_fx_jump: true
+    costs:
+      domestic_fee_bps: 1.0
+      overseas_fee_bps: 1.2
+      domestic_slippage_bps: 1.5
+      overseas_slippage_bps: 1.5
       funding_bps_per_day: 0.5
       holding_hours: 24

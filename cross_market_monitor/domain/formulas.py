@@ -6,6 +6,8 @@ from cross_market_monitor.domain.models import PairConfig
 
 TROY_OUNCE_IN_GRAMS = 31.1034768
 POUNDS_PER_METRIC_TON = 2204.62262
+KILOGRAMS_PER_METRIC_TON = 1000.0
+KILOGRAMS_PER_SOYBEAN_BUSHEL = 27.2155422
 VAT_RATE = 1.13
 
 
@@ -38,6 +40,12 @@ def normalize_domestic_price(raw_price: float | None, pair: PairConfig, usd_cny:
 
     if pair.formula == "sugar":
         return raw_price / usd_cny / POUNDS_PER_METRIC_TON
+
+    if pair.formula == "aluminium":
+        return raw_price / usd_cny
+
+    if pair.formula == "soybean":
+        return raw_price / usd_cny * KILOGRAMS_PER_SOYBEAN_BUSHEL / KILOGRAMS_PER_METRIC_TON
 
     raise ValueError(f"Unsupported formula: {pair.formula}")
 

@@ -66,3 +66,17 @@ alert_thresholds:
     spread_pct_below:
     zscore_above:
     zscore_below:
+  AL_ALUMINIUM:
+    spread_above:
+    spread_below:
+    spread_pct_above:
+    spread_pct_below:
+    zscore_above:
+    zscore_below:
+  B_SOYBEAN:
+    spread_above:
+    spread_below:
+    spread_pct_above:
+    spread_pct_below:
+    zscore_above:
+    zscore_below:

@@ -92,6 +92,8 @@
       CU_COPPER_NET: "铜 CU / COPPER",
       BC_COPPER: "国际铜 BC / COPPER",
       SC_CL: "原油 SC / CL",
+      AL_ALUMINIUM: "铝 AL / ALUMINIUM",
+      B_SOYBEAN: "豆二 B / SOYBEAN",
       CF_COTTON: "棉花 CF / COTTON",
       SR_SUGAR: "白糖 SR / SUGAR",
     };
@@ -144,6 +146,8 @@
       silver: "白银 -> USD/oz",
       copper: "铜 -> USD/lb",
       crude_oil: "原油 -> USD/bbl",
+      aluminium: "铝 -> USD/ton",
+      soybean: "豆二 -> USD/bu",
       cotton: "棉花 -> USD/lb",
       sugar: "白糖 -> USD/lb",
     };
@@ -152,6 +156,8 @@
       USD_PER_OUNCE: "oz",
       USD_PER_POUND: "lb",
       USD_PER_BARREL: "bbl",
+      USD_PER_TON: "ton",
+      USD_PER_BUSHEL: "bu",
     };
 
     const CARD_VARIANT_GROUPS = {
@@ -165,7 +171,7 @@
       },
     };
 
-    const CARD_DISPLAY_ORDER = ["AU_XAU", "AG_XAG", "CU_COPPER", "BC_COPPER", "SC_CL", "CF_COTTON", "SR_SUGAR"];
+    const CARD_DISPLAY_ORDER = ["AU_XAU", "AG_XAG", "CU_COPPER", "AL_ALUMINIUM", "BC_COPPER", "SC_CL", "B_SOYBEAN", "CF_COTTON", "SR_SUGAR"];
 
     const CARD_SELECTION_STORAGE_KEY = "cross-market-card-selection-v5";
     const HISTORY_RANGE_STORAGE_KEY = "cross-market-history-range-v1";

@@ -313,6 +313,9 @@ pairs:
       - source: hyperliquid_xyz
         symbol: xyz:CL
         label: Hyperliquid XYZ CL
+      - source: hyperliquid_xyz
+        symbol: xyz:BRENTOIL
+        label: Hyperliquid XYZ BRENTOIL
       - source: cme_nymex
         symbol: "425"
         label: CME NYMEX CL Reference
@@ -335,6 +338,78 @@ pairs:
       overseas_fee_bps: 1.0
       domestic_slippage_bps: 2.0
       overseas_slippage_bps: 1.8
+      funding_bps_per_day: 0.5
+      holding_hours: 24
+
+  - group_name: AL_ALUMINIUM
+    domestic_source: sina_domestic
+    domestic_symbol: nf_AL0
+    domestic_label: SHFE AL Continuous
+    domestic_candidates:
+      - source: sina_domestic
+        symbol: nf_AL0
+        label: SHFE AL Continuous
+    overseas_source: hyperliquid_xyz
+    overseas_symbol: xyz:ALUMINIUM
+    overseas_label: Hyperliquid XYZ ALUMINIUM
+    overseas_candidates:
+      - source: hyperliquid_xyz
+        symbol: xyz:ALUMINIUM
+        label: Hyperliquid XYZ ALUMINIUM
+    formula: aluminium
+    target_unit: USD_PER_TON
+    domestic_unit: CNY_PER_TON
+    tax_mode: gross
+    hedge_contract_size: 5
+    domestic_lot_size: 5
+    trading_sessions_local: ["09:00-10:15", "10:30-11:30", "13:30-15:00", "21:00-01:00"]
+    thresholds:
+      stale_seconds: 180
+      max_skew_seconds: 180
+      alert_cooldown_seconds: 300
+      fx_jump_abs_pct: 0.005
+      pause_on_fx_jump: true
+    costs:
+      domestic_fee_bps: 1.0
+      overseas_fee_bps: 1.2
+      domestic_slippage_bps: 1.5
+      overseas_slippage_bps: 1.5
+      funding_bps_per_day: 0.5
+      holding_hours: 24
+
+  - group_name: B_SOYBEAN
+    domestic_source: sina_domestic
+    domestic_symbol: nf_B0
+    domestic_label: DCE B Continuous
+    domestic_candidates:
+      - source: sina_domestic
+        symbol: nf_B0
+        label: DCE B Continuous
+    overseas_source: gate_tradfi
+    overseas_symbol: SOYBEAN
+    overseas_label: Gate TradFi SOYBEAN
+    overseas_candidates:
+      - source: gate_tradfi
+        symbol: SOYBEAN
+        label: Gate TradFi SOYBEAN
+    formula: soybean
+    target_unit: USD_PER_BUSHEL
+    domestic_unit: CNY_PER_TON
+    tax_mode: gross
+    hedge_contract_size: 367.4377
+    domestic_lot_size: 10
+    trading_sessions_local: ["09:00-10:15", "10:30-11:30", "13:30-15:00", "21:00-23:00"]
+    thresholds:
+      stale_seconds: 180
+      max_skew_seconds: 180
+      alert_cooldown_seconds: 300
+      fx_jump_abs_pct: 0.005
+      pause_on_fx_jump: true
+    costs:
+      domestic_fee_bps: 1.0
+      overseas_fee_bps: 1.2
+      domestic_slippage_bps: 1.5
+      overseas_slippage_bps: 1.5
       funding_bps_per_day: 0.5
       holding_hours: 24
 

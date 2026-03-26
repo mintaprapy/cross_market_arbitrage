@@ -1,6 +1,13 @@
 import unittest
 
-from cross_market_monitor.domain.formulas import POUNDS_PER_METRIC_TON, TROY_OUNCE_IN_GRAMS, compute_spread, normalize_domestic_price
+from cross_market_monitor.domain.formulas import (
+    KILOGRAMS_PER_METRIC_TON,
+    KILOGRAMS_PER_SOYBEAN_BUSHEL,
+    POUNDS_PER_METRIC_TON,
+    TROY_OUNCE_IN_GRAMS,
+    compute_spread,
+    normalize_domestic_price,
+)
 from cross_market_monitor.domain.models import PairConfig
 
 
@@ -61,6 +68,18 @@ class FormulaTests(unittest.TestCase):
         pair = build_pair("sugar", "gross", "CNY_PER_TON", "USD_PER_POUND")
         price = normalize_domestic_price(6_300.0, pair, 7.2)
         expected = 6_300.0 / 7.2 / POUNDS_PER_METRIC_TON
+        self.assertEqual(round(price or 0, 8), round(expected, 8))
+
+    def test_aluminium_formula_converts_cny_per_ton_to_usd_per_ton(self) -> None:
+        pair = build_pair("aluminium", "gross", "CNY_PER_TON", "USD_PER_TON")
+        price = normalize_domestic_price(23_745.0, pair, 7.2)
+        expected = 23_745.0 / 7.2
+        self.assertEqual(round(price or 0, 8), round(expected, 8))
+
+    def test_soybean_formula_converts_cny_per_ton_to_usd_per_bushel(self) -> None:
+        pair = build_pair("soybean", "gross", "CNY_PER_TON", "USD_PER_BUSHEL")
+        price = normalize_domestic_price(3_741.0, pair, 7.2)
+        expected = 3_741.0 / 7.2 * KILOGRAMS_PER_SOYBEAN_BUSHEL / KILOGRAMS_PER_METRIC_TON
         self.assertEqual(round(price or 0, 8), round(expected, 8))
 
 

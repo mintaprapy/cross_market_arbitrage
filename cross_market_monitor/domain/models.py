@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field, field_validator
 
 TaxMode = Literal["gross", "net"]
 DomesticUnit = Literal["CNY_PER_GRAM", "CNY_PER_KG", "CNY_PER_TON", "CNY_PER_BARREL"]
-TargetUnit = Literal["USD_PER_OUNCE", "USD_PER_POUND", "USD_PER_BARREL"]
+TargetUnit = Literal["USD_PER_OUNCE", "USD_PER_POUND", "USD_PER_BARREL", "USD_PER_TON", "USD_PER_BUSHEL"]
 AlertSeverity = Literal["info", "warning", "critical"]
 
 
@@ -96,7 +96,7 @@ class PairConfig(BaseModel):
     overseas_source: str
     overseas_symbol: str
     overseas_label: str
-    formula: Literal["gold", "silver", "copper", "crude_oil", "cotton", "sugar"]
+    formula: Literal["gold", "silver", "copper", "crude_oil", "cotton", "sugar", "aluminium", "soybean"]
     formula_version: str = "2026-03-13-v1"
     domestic_unit: DomesticUnit
     target_unit: TargetUnit

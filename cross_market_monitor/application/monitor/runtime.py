@@ -26,6 +26,19 @@ class RuntimeService:
         self.retention = retention
         self.poll_cycle = poll_cycle
 
+    def _clear_disabled_group_snapshots(self) -> None:
+        enabled_group_names = {pair.group_name for pair in self.context.enabled_pairs}
+        disabled_group_names = [
+            pair.group_name
+            for pair in self.context.config.pairs
+            if pair.group_name not in enabled_group_names
+        ]
+        if not disabled_group_names:
+            return
+        self.context.repository.delete_latest_snapshots_for_groups(disabled_group_names)
+        for group_name in disabled_group_names:
+            self.context.latest_snapshots.pop(group_name, None)
+
     async def run_forever(self) -> None:
         while not self.context.stop_event.is_set():
             try:
@@ -61,6 +74,7 @@ class RuntimeService:
         if self.context.startup_completed:
             return
         self.context.startup_completed = True
+        self._clear_disabled_group_snapshots()
         self.context.repository.upsert_runtime_state(build_worker_runtime_state(self.context))
         if background_history:
             if self.context.startup_task is None or self.context.startup_task.done():

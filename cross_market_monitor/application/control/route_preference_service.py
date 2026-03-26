@@ -8,6 +8,7 @@ from cross_market_monitor.application.common import (
 )
 from cross_market_monitor.application.context import ServiceContext
 from cross_market_monitor.domain.models import PairConfig, QuoteRouteConfig
+from cross_market_monitor.domain.source_capabilities import capability_for_source
 
 
 class RoutePreferenceService:
@@ -47,10 +48,12 @@ class RoutePreferenceService:
             "options": [
                 {
                     "source": candidate.source,
+                    "source_kind": self.context.config.sources[candidate.source].kind,
                     "symbol": candidate.symbol,
                     "label": candidate.label,
                     "enabled": candidate.enabled,
                     "selected": candidate.symbol == selected,
+                    "capability": capability_for_source(candidate.source, self.context.config.sources[candidate.source]),
                 }
                 for candidate in options
             ],
@@ -99,10 +102,12 @@ class RoutePreferenceService:
             "options": [
                 {
                     "source": candidate.source,
+                    "source_kind": self.context.config.sources[candidate.source].kind,
                     "symbol": candidate.symbol,
                     "label": candidate.label,
                     "enabled": candidate.enabled,
                     "selected": candidate.symbol == selected,
+                    "capability": capability_for_source(candidate.source, self.context.config.sources[candidate.source]),
                 }
                 for candidate in options
             ],

@@ -4,7 +4,9 @@ from cross_market_monitor.application.common import variant_group_base
 from cross_market_monitor.application.context import ServiceContext
 from cross_market_monitor.application.control.route_preference_service import RoutePreferenceService
 from cross_market_monitor.application.history.history_service import HistoryService
+from cross_market_monitor.domain.commodity_specs import build_commodity_spec
 from cross_market_monitor.domain.models import RuntimeHealth, SourceHealth, SpreadSnapshot, WorkerRuntimeState
+from cross_market_monitor.domain.source_capabilities import capability_for_source
 
 
 class QueryService:
@@ -120,6 +122,7 @@ class QueryService:
             item.isoformat()
             for item in self.context.config.app.domestic_non_trading_dates_local
         ]
+        payload["commodity_spec"] = build_commodity_spec(pair) if pair is not None else None
         return payload
 
     def get_health(self) -> dict:
@@ -152,7 +155,13 @@ class QueryService:
             if pair.enabled
         ]
         health["sources"] = [
-            item.model_dump(mode="json")
+            {
+                **item.model_dump(mode="json"),
+                "capability": capability_for_source(
+                    item.source_name,
+                    self.context.config.sources[item.source_name],
+                ) if item.source_name in self.context.config.sources else None,
+            }
             for item in self._current_source_health()
         ]
         return health
@@ -163,13 +172,17 @@ class QueryService:
             "as_of": self._current_last_poll_finished_at(snapshots),
             "health": self.get_health(),
             "default_history_range_key": self.context.default_history_range_key,
+            "source_capabilities": {
+                source_name: capability_for_source(source_name, source_config)
+                for source_name, source_config in self.context.config.sources.items()
+            },
             "snapshots": [
                 self._snapshot_payload(snapshot)
                 for snapshot in sorted(snapshots.values(), key=lambda item: item.group_name)
             ],
         }
 
-    def get_snapshot(self) -> dict:
+    def get_snapshot(self, *, include_cards: bool = False) -> dict:
         summary = self.get_snapshot_summary()
         domestic_preferences = {
             pair.group_name: self.route_preferences.get_domestic_route_options(pair.group_name, refresh_dynamic=False)
@@ -179,7 +192,17 @@ class QueryService:
             pair.group_name: self.route_preferences.get_overseas_route_options(pair.group_name)
             for pair in self.context.enabled_pairs
         }
-        histories = {
+        payload = {
+            **summary,
+            "domestic_route_preferences": domestic_preferences,
+            "overseas_route_preferences": overseas_preferences,
+            "card_endpoint": "/api/card",
+            "snapshot_mode": "lightweight",
+        }
+        if not include_cards:
+            return payload
+        payload["snapshot_mode"] = "full"
+        payload["histories"] = {
             pair.group_name: self.history.get_history(
                 pair.group_name,
                 limit=self.context.history_preview_limit,
@@ -187,17 +210,11 @@ class QueryService:
             )
             for pair in self.context.enabled_pairs
         }
-        shadow_comparisons = {
+        payload["shadow_comparisons"] = {
             pair.group_name: self.history.get_shadow_comparison(pair.group_name, limit=120)
             for pair in self.context.enabled_pairs
         }
-        return {
-            **summary,
-            "domestic_route_preferences": domestic_preferences,
-            "overseas_route_preferences": overseas_preferences,
-            "histories": histories,
-            "shadow_comparisons": shadow_comparisons,
-        }
+        return payload
 
     def get_card_view(self, group_name: str, range_key: str | None = None) -> dict:
         snapshots = self._current_snapshots()

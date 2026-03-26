@@ -25,6 +25,11 @@ class RetentionService:
 
     def run_once(self, *, started_at=None) -> dict:
         started = started_at or utc_now()
+        enabled_group_names = [
+            pair.group_name
+            for pair in self.context.config.pairs
+            if pair.enabled
+        ]
         self.context.repository.upsert_job_run(
             JobRun(
                 job_name="retention",
@@ -52,7 +57,7 @@ class RetentionService:
                 cutoff_ts = (started - timedelta(days=retention_days)).isoformat()
                 deleted_rows[table_name] = self.context.repository.delete_rows_before(table_name, ts_column, cutoff_ts)
 
-            self.context.repository.rebuild_latest_snapshots()
+            self.context.repository.rebuild_latest_snapshots(enabled_group_names)
             self.context.repository.checkpoint_wal()
             finished = utc_now()
             self.context.retention_last_run_at = finished

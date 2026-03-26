@@ -11,8 +11,8 @@ def build_market_router(service) -> APIRouter:
         return service.get_health()
 
     @router.get("/api/snapshot")
-    async def snapshot() -> dict:
-        return service.get_snapshot()
+    async def snapshot(include_cards: bool = Query(default=False)) -> dict:
+        return service.get_snapshot(include_cards=include_cards)
 
     @router.get("/api/snapshot-summary")
     async def snapshot_summary() -> dict:

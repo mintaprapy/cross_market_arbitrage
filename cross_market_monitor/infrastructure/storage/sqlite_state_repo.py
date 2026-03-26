@@ -7,6 +7,16 @@ from cross_market_monitor.domain.models import FXQuote, JobRun, SourceHealth, Sp
 
 
 class SQLiteStateRepoMixin:
+    def delete_latest_snapshots_for_groups(self, group_names: list[str]) -> None:
+        if not group_names:
+            return
+        placeholders = ",".join("?" for _ in group_names)
+        with self._lock, self._connect() as connection:
+            connection.execute(
+                f"DELETE FROM latest_snapshots WHERE group_name IN ({placeholders})",
+                tuple(group_names),
+            )
+
     def load_recent_spreads(self, group_name: str, limit: int) -> list[float]:
         with self._lock, self._connect() as connection:
             rows = connection.execute(
@@ -411,9 +421,28 @@ class SQLiteStateRepoMixin:
         with self._lock, self._connect() as connection:
             connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
 
-    def rebuild_latest_snapshots(self) -> None:
+    def rebuild_latest_snapshots(self, group_names: list[str] | None = None) -> None:
         with self._lock, self._connect() as connection:
             connection.execute("DELETE FROM latest_snapshots")
+            if group_names:
+                placeholders = ",".join("?" for _ in group_names)
+                connection.execute(
+                    f"""
+                INSERT INTO latest_snapshots (group_name, snapshot_id, ts)
+                SELECT s.group_name, s.id, s.ts
+                FROM spread_snapshots AS s
+                INNER JOIN (
+                    SELECT group_name, MAX(id) AS latest_id
+                    FROM spread_snapshots
+                    WHERE group_name IN ({placeholders})
+                    GROUP BY group_name
+                ) AS latest
+                    ON latest.group_name = s.group_name
+                   AND latest.latest_id = s.id
+                """,
+                    tuple(group_names),
+                )
+                return
             connection.execute(
                 """
                 INSERT INTO latest_snapshots (group_name, snapshot_id, ts)

@@ -226,8 +226,8 @@ class MonitorService:
     def get_health(self) -> dict:
         return self.query.get_health()
 
-    def get_snapshot(self) -> dict:
-        return self.query.get_snapshot()
+    def get_snapshot(self, *, include_cards: bool = False) -> dict:
+        return self.query.get_snapshot(include_cards=include_cards)
 
     def get_snapshot_summary(self) -> dict:
         return self.query.get_snapshot_summary()
@@ -327,13 +327,19 @@ class MonitorService:
         self.history.ensure_overseas_history(pair, range_key=range_key, start_ts=start_ts, end_ts=end_ts)
 
     def _preload_cached_state(self) -> None:
+        enabled_group_names = {pair.group_name for pair in self._enabled_pairs}
         latest_snapshots = self.repository.load_latest_snapshots()
         if latest_snapshots:
-            self.context.latest_snapshots = {snapshot.group_name: snapshot for snapshot in latest_snapshots}
+            self.context.latest_snapshots = {
+                snapshot.group_name: snapshot
+                for snapshot in latest_snapshots
+                if snapshot.group_name in enabled_group_names
+            }
             self.latest_snapshots = self.context.latest_snapshots
-            newest_snapshot = max(latest_snapshots, key=lambda item: item.ts)
-            self.context.last_poll_finished_at = newest_snapshot.ts
-            self.context.latest_fx_jump_pct = newest_snapshot.fx_jump_pct
+            if self.context.latest_snapshots:
+                newest_snapshot = max(self.context.latest_snapshots.values(), key=lambda item: item.ts)
+                self.context.last_poll_finished_at = newest_snapshot.ts
+                self.context.latest_fx_jump_pct = newest_snapshot.fx_jump_pct
         runtime_state = self.repository.load_runtime_state("worker")
         if runtime_state is not None:
             self.context.total_cycles = runtime_state.total_cycles

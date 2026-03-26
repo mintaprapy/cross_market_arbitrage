@@ -610,6 +610,259 @@ class MonitorServiceTests(unittest.TestCase):
             self.assertEqual([item["group_name"] for item in payload["snapshots"]], ["AU_XAU_TEST"])
             self.assertEqual([item["group_name"] for item in payload["health"]["pairs"]], ["AU_XAU_TEST"])
 
+    def test_snapshot_default_is_lightweight_without_histories(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repository = SQLiteRepository(f"{tmp_dir}/monitor.db")
+            config = MonitorConfig.model_validate(
+                {
+                    "app": {
+                        "name": "test",
+                        "fx_source": "fx",
+                        "sqlite_path": f"{tmp_dir}/monitor.db",
+                    },
+                    "sources": {
+                        "domestic": {"kind": "mock_quote", "base_url": "http://local"},
+                        "overseas": {"kind": "mock_quote", "base_url": "http://local"},
+                        "fx": {"kind": "mock_fx", "base_url": "http://local"},
+                    },
+                    "pairs": [
+                        {
+                            "group_name": "AU_XAU_TEST",
+                            "domestic_source": "domestic",
+                            "domestic_symbol": "nf_AU0",
+                            "domestic_label": "AU Main",
+                            "overseas_source": "overseas",
+                            "overseas_symbol": "XAUUSDT",
+                            "overseas_label": "Binance XAU",
+                            "formula": "gold",
+                            "domestic_unit": "CNY_PER_GRAM",
+                            "target_unit": "USD_PER_OUNCE",
+                        }
+                    ],
+                }
+            )
+
+            service = MonitorService(config, repository)
+            service.history.get_history = mock.Mock(side_effect=AssertionError("should not load history"))
+            service.history.get_shadow_comparison = mock.Mock(side_effect=AssertionError("should not load shadow"))
+
+            payload = service.get_snapshot()
+
+            self.assertEqual(payload["snapshot_mode"], "lightweight")
+            self.assertEqual(payload["card_endpoint"], "/api/card")
+            self.assertNotIn("histories", payload)
+            self.assertNotIn("shadow_comparisons", payload)
+
+    def test_snapshot_can_opt_in_full_payload(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repository = SQLiteRepository(f"{tmp_dir}/monitor.db")
+            config = MonitorConfig.model_validate(
+                {
+                    "app": {
+                        "name": "test",
+                        "fx_source": "fx",
+                        "sqlite_path": f"{tmp_dir}/monitor.db",
+                    },
+                    "sources": {
+                        "domestic": {"kind": "mock_quote", "base_url": "http://local"},
+                        "overseas": {"kind": "mock_quote", "base_url": "http://local"},
+                        "fx": {"kind": "mock_fx", "base_url": "http://local"},
+                    },
+                    "pairs": [
+                        {
+                            "group_name": "AU_XAU_TEST",
+                            "domestic_source": "domestic",
+                            "domestic_symbol": "nf_AU0",
+                            "domestic_label": "AU Main",
+                            "overseas_source": "overseas",
+                            "overseas_symbol": "XAUUSDT",
+                            "overseas_label": "Binance XAU",
+                            "formula": "gold",
+                            "domestic_unit": "CNY_PER_GRAM",
+                            "target_unit": "USD_PER_OUNCE",
+                        }
+                    ],
+                }
+            )
+
+            service = MonitorService(config, repository)
+            service.history.get_history = mock.Mock(return_value=[{"ts": "2026-03-13T00:00:00+00:00"}])
+            service.history.get_shadow_comparison = mock.Mock(return_value={"summary": None})
+
+            payload = service.get_snapshot(include_cards=True)
+
+            self.assertEqual(payload["snapshot_mode"], "full")
+            self.assertIn("histories", payload)
+            self.assertIn("shadow_comparisons", payload)
+            self.assertIn("AU_XAU_TEST", payload["histories"])
+
+    def test_startup_clears_disabled_group_latest_snapshots(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repository = SQLiteRepository(f"{tmp_dir}/monitor.db")
+            config = MonitorConfig.model_validate(
+                {
+                    "app": {
+                        "name": "test",
+                        "fx_source": "fx",
+                        "sqlite_path": f"{tmp_dir}/monitor.db",
+                    },
+                    "sources": {
+                        "domestic": {"kind": "mock_quote", "base_url": "http://local"},
+                        "overseas": {"kind": "mock_quote", "base_url": "http://local"},
+                        "fx": {"kind": "mock_fx", "base_url": "http://local"},
+                    },
+                    "pairs": [
+                        {
+                            "group_name": "AU_XAU_TEST",
+                            "domestic_source": "domestic",
+                            "domestic_symbol": "nf_AU0",
+                            "domestic_label": "AU Main",
+                            "overseas_source": "overseas",
+                            "overseas_symbol": "XAUUSDT",
+                            "overseas_label": "Binance XAU",
+                            "formula": "gold",
+                            "domestic_unit": "CNY_PER_GRAM",
+                            "target_unit": "USD_PER_OUNCE",
+                        },
+                        {
+                            "group_name": "CF_COTTON_TEST",
+                            "enabled": False,
+                            "domestic_source": "domestic",
+                            "domestic_symbol": "nf_CF0",
+                            "domestic_label": "CF Main",
+                            "overseas_source": "overseas",
+                            "overseas_symbol": "COTTON",
+                            "overseas_label": "Gate COTTON",
+                            "formula": "cotton",
+                            "domestic_unit": "CNY_PER_TON",
+                            "target_unit": "USD_PER_POUND",
+                        },
+                    ],
+                }
+            )
+
+            for group_name, domestic_symbol, overseas_symbol, formula, target_unit in [
+                ("AU_XAU_TEST", "nf_AU0", "XAUUSDT", "gold", "USD_PER_OUNCE"),
+                ("CF_COTTON_TEST", "nf_CF0", "COTTON", "cotton", "USD_PER_POUND"),
+            ]:
+                repository.insert_snapshot(
+                    SpreadSnapshot(
+                        ts=datetime(2026, 3, 13, 0, 0, tzinfo=UTC),
+                        group_name=group_name,
+                        domestic_symbol=domestic_symbol,
+                        overseas_symbol=overseas_symbol,
+                        fx_source="fx",
+                        fx_rate=7.0,
+                        formula=formula,
+                        formula_version="v1",
+                        tax_mode="gross",
+                        target_unit=target_unit,
+                        status="ok",
+                        normalized_last=100.0,
+                        overseas_last=99.0,
+                        spread=1.0,
+                        spread_pct=0.01,
+                        zscore=1.0,
+                    ),
+                    timezone_name="Asia/Shanghai",
+                )
+
+            service = MonitorService(config, repository)
+            asyncio.run(service.startup())
+
+            latest_groups = [item.group_name for item in repository.load_latest_snapshots()]
+            self.assertEqual(latest_groups, ["AU_XAU_TEST"])
+
+    def test_snapshot_payload_includes_commodity_spec(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repository = SQLiteRepository(f"{tmp_dir}/monitor.db")
+            config = MonitorConfig.model_validate(
+                {
+                    "app": {
+                        "name": "test",
+                        "fx_source": "fx",
+                        "sqlite_path": f"{tmp_dir}/monitor.db",
+                    },
+                    "sources": {
+                        "domestic": {"kind": "mock_quote", "base_url": "http://local"},
+                        "overseas": {"kind": "mock_quote", "base_url": "http://local"},
+                        "fx": {"kind": "mock_fx", "base_url": "http://local"},
+                    },
+                    "pairs": [
+                        {
+                            "group_name": "AL_ALUMINIUM_TEST",
+                            "domestic_source": "domestic",
+                            "domestic_symbol": "nf_AL0",
+                            "domestic_label": "AL Main",
+                            "overseas_source": "overseas",
+                            "overseas_symbol": "xyz:ALUMINIUM",
+                            "overseas_label": "XYZ AL",
+                            "formula": "aluminium",
+                            "domestic_unit": "CNY_PER_TON",
+                            "target_unit": "USD_PER_TON",
+                            "domestic_lot_size": 5,
+                            "hedge_contract_size": 5,
+                        }
+                    ],
+                }
+            )
+
+            service = MonitorService(config, repository)
+            service.adapters["domestic"] = StaticQuoteAdapter("domestic", 23740.0, 23739.0, 23741.0)
+            service.adapters["overseas"] = StaticQuoteAdapter("overseas", 3080.0, 3079.0, 3081.0)
+            service.adapters["fx"] = StaticFxAdapter("fx", 6.9)
+
+            asyncio.run(service.poll_once())
+            payload = service.get_snapshot_summary()
+            spec = payload["snapshots"][0]["commodity_spec"]
+
+            self.assertEqual(spec["formula"], "aluminium")
+            self.assertEqual(spec["normalized_unit_label"], "USD/ton")
+            self.assertEqual(spec["domestic_lot_size"], 5)
+            self.assertEqual(spec["hedge_contract_size"], 5)
+
+    def test_health_and_route_options_expose_source_capabilities(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repository = SQLiteRepository(f"{tmp_dir}/monitor.db")
+            config = MonitorConfig.model_validate(
+                {
+                    "app": {
+                        "name": "test",
+                        "fx_source": "fx",
+                        "sqlite_path": f"{tmp_dir}/monitor.db",
+                    },
+                    "sources": {
+                        "domestic": {"kind": "sina_futures", "base_url": "https://hq.sinajs.cn"},
+                        "overseas": {"kind": "gate_tradfi", "base_url": "https://api.gateio.ws"},
+                        "fx": {"kind": "frankfurter_fx", "base_url": "https://api.frankfurter.app"},
+                    },
+                    "pairs": [
+                        {
+                            "group_name": "CF_COTTON_TEST",
+                            "domestic_source": "domestic",
+                            "domestic_symbol": "nf_CF0",
+                            "domestic_label": "CF Main",
+                            "overseas_source": "overseas",
+                            "overseas_symbol": "COTTON",
+                            "overseas_label": "Gate COTTON",
+                            "formula": "cotton",
+                            "domestic_unit": "CNY_PER_TON",
+                            "target_unit": "USD_PER_POUND",
+                        }
+                    ],
+                }
+            )
+
+            service = MonitorService(config, repository)
+            health = service.get_health()
+            overseas_options = service.get_overseas_route_options("CF_COTTON_TEST")
+
+            overseas_source = next(item for item in health["sources"] if item["source_name"] == "overseas")
+            self.assertTrue(overseas_source["capability"]["supports_history"])
+            self.assertEqual(overseas_source["capability"]["history_limit"], 500)
+            self.assertTrue(overseas_options["options"][0]["capability"]["supports_history"])
+            self.assertEqual(overseas_options["options"][0]["source_kind"], "gate_tradfi")
+
     def test_health_reads_persisted_worker_runtime_and_source_health(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             repository = SQLiteRepository(f"{tmp_dir}/monitor.db")

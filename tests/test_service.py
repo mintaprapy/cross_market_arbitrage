@@ -516,6 +516,100 @@ class MonitorServiceTests(unittest.TestCase):
             self.assertEqual(payload["health"]["pairs"][0]["status"], "stale")
             self.assertEqual(payload["health"]["latest_fx_rate"], 7.1)
 
+    def test_snapshot_excludes_disabled_groups_even_if_repository_has_old_latest_rows(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repository = SQLiteRepository(f"{tmp_dir}/monitor.db")
+            config = MonitorConfig.model_validate(
+                {
+                    "app": {
+                        "name": "test",
+                        "fx_source": "fx",
+                        "sqlite_path": f"{tmp_dir}/monitor.db",
+                    },
+                    "sources": {
+                        "domestic": {"kind": "mock_quote", "base_url": "http://local"},
+                        "overseas": {"kind": "mock_quote", "base_url": "http://local"},
+                        "fx": {"kind": "mock_fx", "base_url": "http://local"},
+                    },
+                    "pairs": [
+                        {
+                            "group_name": "AU_XAU_TEST",
+                            "domestic_source": "domestic",
+                            "domestic_symbol": "nf_AU0",
+                            "domestic_label": "AU Main",
+                            "overseas_source": "overseas",
+                            "overseas_symbol": "XAUUSDT",
+                            "overseas_label": "Binance XAU",
+                            "formula": "gold",
+                            "domestic_unit": "CNY_PER_GRAM",
+                            "target_unit": "USD_PER_OUNCE",
+                        },
+                        {
+                            "group_name": "CF_COTTON_TEST",
+                            "enabled": False,
+                            "domestic_source": "domestic",
+                            "domestic_symbol": "nf_CF0",
+                            "domestic_label": "CF Main",
+                            "overseas_source": "overseas",
+                            "overseas_symbol": "COTTON",
+                            "overseas_label": "Gate COTTON",
+                            "formula": "cotton",
+                            "domestic_unit": "CNY_PER_TON",
+                            "target_unit": "USD_PER_POUND",
+                        },
+                    ],
+                }
+            )
+
+            service = MonitorService(config, repository)
+            repository.insert_snapshot(
+                SpreadSnapshot(
+                    ts=datetime(2026, 3, 13, 0, 0, tzinfo=UTC),
+                    group_name="AU_XAU_TEST",
+                    domestic_symbol="nf_AU0",
+                    overseas_symbol="XAUUSDT",
+                    fx_source="fx",
+                    fx_rate=7.0,
+                    formula="gold",
+                    formula_version="v1",
+                    tax_mode="gross",
+                    target_unit="USD_PER_OUNCE",
+                    status="ok",
+                    normalized_last=100.0,
+                    overseas_last=99.0,
+                    spread=1.0,
+                    spread_pct=0.01,
+                    zscore=1.0,
+                ),
+                timezone_name="Asia/Shanghai",
+            )
+            repository.insert_snapshot(
+                SpreadSnapshot(
+                    ts=datetime(2026, 3, 13, 0, 5, tzinfo=UTC),
+                    group_name="CF_COTTON_TEST",
+                    domestic_symbol="nf_CF0",
+                    overseas_symbol="COTTON",
+                    fx_source="fx",
+                    fx_rate=7.0,
+                    formula="cotton",
+                    formula_version="v1",
+                    tax_mode="gross",
+                    target_unit="USD_PER_POUND",
+                    status="ok",
+                    normalized_last=1.0,
+                    overseas_last=0.7,
+                    spread=0.3,
+                    spread_pct=0.35,
+                    zscore=2.0,
+                ),
+                timezone_name="Asia/Shanghai",
+            )
+
+            payload = service.get_snapshot()
+
+            self.assertEqual([item["group_name"] for item in payload["snapshots"]], ["AU_XAU_TEST"])
+            self.assertEqual([item["group_name"] for item in payload["health"]["pairs"]], ["AU_XAU_TEST"])
+
     def test_health_reads_persisted_worker_runtime_and_source_health(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             repository = SQLiteRepository(f"{tmp_dir}/monitor.db")

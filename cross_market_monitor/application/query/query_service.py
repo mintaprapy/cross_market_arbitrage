@@ -19,13 +19,24 @@ class QueryService:
         self.history = history
 
     def _current_snapshots(self) -> dict[str, SpreadSnapshot]:
+        enabled_group_names = {pair.group_name for pair in self.context.enabled_pairs}
         if self.context.is_polling:
-            return self.context.latest_snapshots
+            return {
+                group_name: snapshot
+                for group_name, snapshot in self.context.latest_snapshots.items()
+                if group_name in enabled_group_names
+            }
         latest = {
             snapshot.group_name: snapshot
             for snapshot in self.context.repository.load_latest_snapshots()
+            if snapshot.group_name in enabled_group_names
         }
-        return latest or self.context.latest_snapshots
+        fallback = {
+            group_name: snapshot
+            for group_name, snapshot in self.context.latest_snapshots.items()
+            if group_name in enabled_group_names
+        }
+        return latest or fallback
 
     def _current_runtime_state(self, snapshots: dict[str, SpreadSnapshot]) -> WorkerRuntimeState:
         if self.context.is_polling:

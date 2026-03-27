@@ -10,6 +10,7 @@ BIND_HOST="${BIND_HOST:-127.0.0.1}"
 BIND_PORT="${BIND_PORT:-6080}"
 HEALTH_WAIT_TIMEOUT_SEC="${HEALTH_WAIT_TIMEOUT_SEC:-30}"
 HEALTH_WAIT_INTERVAL_SEC="${HEALTH_WAIT_INTERVAL_SEC:-2}"
+PORT_RELEASE_TIMEOUT_SEC="${PORT_RELEASE_TIMEOUT_SEC:-15}"
 PYTHON_BIN="$ROOT_DIR/.venv/bin/python"
 RUN_CMD=(
   "$PYTHON_BIN"
@@ -49,6 +50,21 @@ fi
 
 pkill -f "cross_market_monitor.main --config $CONFIG_PATH serve --host $BIND_HOST --port $BIND_PORT" 2>/dev/null || true
 
+wait_for_port_release() {
+  local deadline=$((SECONDS + PORT_RELEASE_TIMEOUT_SEC))
+
+  while (( SECONDS < deadline )); do
+    if ! lsof -nP -iTCP:"$BIND_PORT" -sTCP:LISTEN >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 1
+  done
+
+  echo "port $BIND_PORT is still in use after ${PORT_RELEASE_TIMEOUT_SEC}s" >&2
+  lsof -nP -iTCP:"$BIND_PORT" -sTCP:LISTEN || true
+  exit 1
+}
+
 wait_for_health() {
   local deadline=$((SECONDS + HEALTH_WAIT_TIMEOUT_SEC))
   local health_url="http://127.0.0.1:$BIND_PORT/api/health"
@@ -74,6 +90,8 @@ wait_for_health() {
 ts="$(date +%Y%m%d_%H%M%S)"
 log_file="$LOG_DIR/runtime_${ts}.log"
 ln -sfn "$log_file" "$LOG_LINK"
+
+wait_for_port_release
 
 echo "starting service on http://$BIND_HOST:$BIND_PORT without git update..."
 nohup "${RUN_CMD[@]}" </dev/null > "$log_file" 2>&1 &

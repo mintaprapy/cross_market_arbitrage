@@ -8,6 +8,8 @@ LOG_LINK="$LOG_DIR/runtime_latest.log"
 CONFIG_PATH="$ROOT_DIR/config/monitor.yaml"
 BIND_HOST="${BIND_HOST:-127.0.0.1}"
 BIND_PORT="${BIND_PORT:-6080}"
+HEALTH_WAIT_TIMEOUT_SEC="${HEALTH_WAIT_TIMEOUT_SEC:-30}"
+HEALTH_WAIT_INTERVAL_SEC="${HEALTH_WAIT_INTERVAL_SEC:-2}"
 PYTHON_BIN="$ROOT_DIR/.venv/bin/python"
 RUN_CMD=(
   "$PYTHON_BIN"
@@ -47,6 +49,28 @@ fi
 
 pkill -f "cross_market_monitor.main --config $CONFIG_PATH serve --host $BIND_HOST --port $BIND_PORT" 2>/dev/null || true
 
+wait_for_health() {
+  local deadline=$((SECONDS + HEALTH_WAIT_TIMEOUT_SEC))
+  local health_url="http://127.0.0.1:$BIND_PORT/api/health"
+
+  while (( SECONDS < deadline )); do
+    if ! kill -0 "$pid" 2>/dev/null; then
+      echo "process exited unexpectedly; check log: $log_file" >&2
+      tail -n 80 "$log_file" || true
+      exit 1
+    fi
+    if curl -fsS "$health_url" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep "$HEALTH_WAIT_INTERVAL_SEC"
+  done
+
+  echo "service is still starting or health check timed out after ${HEALTH_WAIT_TIMEOUT_SEC}s" >&2
+  echo "log: $log_file" >&2
+  tail -n 40 "$log_file" || true
+  exit 1
+}
+
 ts="$(date +%Y%m%d_%H%M%S)"
 log_file="$LOG_DIR/runtime_${ts}.log"
 ln -sfn "$log_file" "$LOG_LINK"
@@ -57,13 +81,7 @@ pid="$!"
 disown || true
 echo "$pid" > "$PID_FILE"
 
-sleep 6
-
-if ! kill -0 "$pid" 2>/dev/null; then
-  echo "process exited unexpectedly; check log: $log_file" >&2
-  tail -n 80 "$log_file" || true
-  exit 1
-fi
+wait_for_health
 
 echo "pid: $pid"
 echo "log: $log_file"

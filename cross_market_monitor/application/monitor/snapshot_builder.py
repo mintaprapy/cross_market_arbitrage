@@ -132,13 +132,13 @@ class SnapshotBuilder:
         snapshot_ts = utc_now()
         window = self.context.windows[pair.group_name]
         rolling_mean = rolling_std = zscore = delta_spread = None
-        if spread is not None:
+        if spread_pct is not None:
             rolling_mean, rolling_std, zscore, delta_spread = window.summary(
-                spread,
+                spread_pct,
                 current_ts=snapshot_ts,
             )
             if status == "ok":
-                window.append(spread, ts=snapshot_ts)
+                window.append(spread_pct, ts=snapshot_ts)
 
         snapshot = SpreadSnapshot(
             ts=snapshot_ts,

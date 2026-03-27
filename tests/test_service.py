@@ -3764,7 +3764,7 @@ class MonitorServiceTests(unittest.TestCase):
 
             self.assertEqual(
                 service.context.windows["AU_XAU_TEST"].values(as_of=now),
-                [2.0, 3.0],
+                [0.02, 0.03],
             )
 
     def test_preloads_zscore_window_from_all_snapshot_history_when_window_is_zero(self) -> None:
@@ -3837,7 +3837,78 @@ class MonitorServiceTests(unittest.TestCase):
 
             self.assertEqual(
                 service.context.windows["AU_XAU_TEST"].values(as_of=now),
-                [10.0, 2.0, 3.0],
+                [0.1, 0.02, 0.03],
+            )
+
+    def test_zscore_uses_spread_pct_not_absolute_spread(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repository = SQLiteRepository(f"{tmp_dir}/monitor.db")
+            config = MonitorConfig.model_validate(
+                {
+                    "app": {
+                        "name": "test",
+                        "fx_source": "fx",
+                        "sqlite_path": f"{tmp_dir}/monitor.db",
+                    },
+                    "sources": {
+                        "domestic": {"kind": "mock_quote", "base_url": "http://local"},
+                        "overseas": {"kind": "mock_quote", "base_url": "http://local"},
+                        "fx": {"kind": "mock_fx", "base_url": "http://local"},
+                    },
+                    "pairs": [
+                        {
+                            "group_name": "AU_XAU_TEST",
+                            "domestic_source": "domestic",
+                            "domestic_symbol": "nf_AU0",
+                            "domestic_label": "AU Main",
+                            "overseas_source": "overseas",
+                            "overseas_symbol": "XAU",
+                            "overseas_label": "XAU",
+                            "formula": "gold",
+                            "domestic_unit": "CNY_PER_GRAM",
+                            "target_unit": "USD_PER_OUNCE",
+                        }
+                    ],
+                }
+            )
+            service = MonitorService(config, repository)
+            now = datetime.now(UTC)
+            service.context.windows["AU_XAU_TEST"].replace(
+                [
+                    (now - timedelta(minutes=45), 0.08),
+                    (now - timedelta(minutes=30), 0.10),
+                    (now - timedelta(minutes=15), 0.12),
+                ]
+            )
+            service.adapters["domestic"] = FixedTimestampQuoteAdapter(
+                "domestic",
+                now,
+                1000.0,
+                999.0,
+                1001.0,
+            )
+            service.adapters["overseas"] = FixedTimestampQuoteAdapter(
+                "overseas",
+                now,
+                890.0,
+                889.0,
+                891.0,
+            )
+            service.adapters["fx"] = FixedTimestampFxAdapter("fx", now, 1.0)
+
+            snapshots = asyncio.run(service.poll_once())
+            snapshot = snapshots[0]
+
+            expected_pct = snapshot.spread_pct or 0.0
+            self.assertAlmostEqual(snapshot.rolling_mean or 0.0, 0.10)
+            self.assertAlmostEqual(round(snapshot.rolling_std or 0.0, 6), 0.01633)
+            self.assertAlmostEqual(
+                round(snapshot.zscore or 0.0, 6),
+                round((expected_pct - 0.10) / (snapshot.rolling_std or 1.0), 6),
+            )
+            self.assertNotAlmostEqual(
+                round(snapshot.zscore or 0.0, 6),
+                round(((snapshot.spread or 0.0) - 0.10) / (snapshot.rolling_std or 1.0), 6),
             )
 
     def test_rebuilds_chart_history_from_main_contract_selection(self) -> None:

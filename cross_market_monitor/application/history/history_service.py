@@ -127,10 +127,10 @@ class HistoryService:
         points: list[tuple[datetime, float]] = []
         for row in rows:
             ts = self.parse_history_ts(row)
-            spread = row.get("spread")
-            if ts is None or spread is None:
+            spread_pct = row.get("spread_pct")
+            if ts is None or spread_pct is None:
                 continue
-            points.append((ts, float(spread)))
+            points.append((ts, float(spread_pct)))
         return points
 
     def normalize_history_range_key(self, range_key: str | None) -> str:

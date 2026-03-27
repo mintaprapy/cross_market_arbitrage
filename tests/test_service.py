@@ -3694,6 +3694,152 @@ class MonitorServiceTests(unittest.TestCase):
             self.assertIsNotNone(service.latest_fx_quote)
             self.assertIsNotNone(service.last_poll_finished_at)
 
+    def test_preloads_zscore_window_from_last_30_days_of_snapshot_history(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repository = SQLiteRepository(f"{tmp_dir}/monitor.db")
+            now = datetime.now(UTC)
+            for ts, spread in [
+                (now - timedelta(days=31), 10.0),
+                (now - timedelta(days=15), 2.0),
+                (now - timedelta(days=3), 3.0),
+            ]:
+                repository.insert_snapshot(
+                    SpreadSnapshot(
+                        ts=ts,
+                        group_name="AU_XAU_TEST",
+                        domestic_symbol="nf_AU0",
+                        overseas_symbol="XAU",
+                        fx_source="fx",
+                        fx_rate=6.9,
+                        formula="gold",
+                        formula_version="v1",
+                        tax_mode="gross",
+                        target_unit="USD_PER_OUNCE",
+                        status="ok",
+                        domestic_source="domestic",
+                        overseas_source="overseas",
+                        domestic_label="AU Main",
+                        overseas_label="XAU",
+                        normalized_last=100.0,
+                        overseas_last=87.7,
+                        spread=spread,
+                        spread_pct=spread / 100.0,
+                        zscore=1.4,
+                        route_detail={},
+                        errors=[],
+                    ),
+                    timezone_name="Asia/Shanghai",
+                )
+            config = MonitorConfig.model_validate(
+                {
+                    "app": {
+                        "name": "test",
+                        "fx_source": "fx",
+                        "sqlite_path": f"{tmp_dir}/monitor.db",
+                        "zscore_window_days": 30,
+                    },
+                    "sources": {
+                        "domestic": {"kind": "mock_quote", "base_url": "http://local"},
+                        "overseas": {"kind": "mock_quote", "base_url": "http://local"},
+                        "fx": {"kind": "mock_fx", "base_url": "http://local"},
+                    },
+                    "pairs": [
+                        {
+                            "group_name": "AU_XAU_TEST",
+                            "domestic_source": "domestic",
+                            "domestic_symbol": "nf_AU0",
+                            "domestic_label": "AU Main",
+                            "overseas_source": "overseas",
+                            "overseas_symbol": "XAU",
+                            "overseas_label": "XAU",
+                            "formula": "gold",
+                            "domestic_unit": "CNY_PER_GRAM",
+                            "target_unit": "USD_PER_OUNCE",
+                        }
+                    ],
+                }
+            )
+
+            service = MonitorService(config, repository)
+
+            self.assertEqual(
+                service.context.windows["AU_XAU_TEST"].values(as_of=now),
+                [2.0, 3.0],
+            )
+
+    def test_preloads_zscore_window_from_all_snapshot_history_when_window_is_zero(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repository = SQLiteRepository(f"{tmp_dir}/monitor.db")
+            now = datetime.now(UTC)
+            for ts, spread in [
+                (now - timedelta(days=31), 10.0),
+                (now - timedelta(days=15), 2.0),
+                (now - timedelta(days=3), 3.0),
+            ]:
+                repository.insert_snapshot(
+                    SpreadSnapshot(
+                        ts=ts,
+                        group_name="AU_XAU_TEST",
+                        domestic_symbol="nf_AU0",
+                        overseas_symbol="XAU",
+                        fx_source="fx",
+                        fx_rate=6.9,
+                        formula="gold",
+                        formula_version="v1",
+                        tax_mode="gross",
+                        target_unit="USD_PER_OUNCE",
+                        status="ok",
+                        domestic_source="domestic",
+                        overseas_source="overseas",
+                        domestic_label="AU Main",
+                        overseas_label="XAU",
+                        normalized_last=100.0,
+                        overseas_last=87.7,
+                        spread=spread,
+                        spread_pct=spread / 100.0,
+                        zscore=1.4,
+                        route_detail={},
+                        errors=[],
+                    ),
+                    timezone_name="Asia/Shanghai",
+                )
+            config = MonitorConfig.model_validate(
+                {
+                    "app": {
+                        "name": "test",
+                        "fx_source": "fx",
+                        "sqlite_path": f"{tmp_dir}/monitor.db",
+                        "zscore_window_days": 0,
+                    },
+                    "sources": {
+                        "domestic": {"kind": "mock_quote", "base_url": "http://local"},
+                        "overseas": {"kind": "mock_quote", "base_url": "http://local"},
+                        "fx": {"kind": "mock_fx", "base_url": "http://local"},
+                    },
+                    "pairs": [
+                        {
+                            "group_name": "AU_XAU_TEST",
+                            "domestic_source": "domestic",
+                            "domestic_symbol": "nf_AU0",
+                            "domestic_label": "AU Main",
+                            "overseas_source": "overseas",
+                            "overseas_symbol": "XAU",
+                            "overseas_label": "XAU",
+                            "formula": "gold",
+                            "domestic_unit": "CNY_PER_GRAM",
+                            "target_unit": "USD_PER_OUNCE",
+                        }
+                    ],
+                }
+            )
+
+            service = MonitorService(config, repository)
+
+            self.assertEqual(
+                service.context.windows["AU_XAU_TEST"].values(as_of=now),
+                [10.0, 2.0, 3.0],
+            )
+
     def test_rebuilds_chart_history_from_main_contract_selection(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             repository = SQLiteRepository(f"{tmp_dir}/monitor.db")

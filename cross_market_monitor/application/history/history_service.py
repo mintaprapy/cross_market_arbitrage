@@ -81,6 +81,58 @@ class HistoryService:
             self.history_target_points(normalized_range_key, limit),
         )
 
+    def refresh_spread_windows_from_local_history(self, group_names: list[str] | None = None) -> None:
+        start_ts = self.zscore_window_start()
+        targets = group_names or [pair.group_name for pair in self.context.enabled_pairs]
+        for group_name in targets:
+            pair = self.context.pair_map.get(group_name)
+            window = self.context.windows.get(group_name)
+            if pair is None or window is None:
+                continue
+            window.replace(self.load_spread_window_points(pair, start_ts=start_ts))
+
+    def zscore_window_start(self) -> str | None:
+        if self.context.config.app.zscore_window_days <= 0:
+            return None
+        return (utc_now() - timedelta(days=self.context.config.app.zscore_window_days)).isoformat()
+
+    def load_spread_window_points(
+        self,
+        pair: PairConfig,
+        *,
+        start_ts: str | None,
+        end_ts: str | None = None,
+    ) -> list[tuple[datetime, float]]:
+        domestic_symbol = self.context.preferred_domestic_symbols.get(pair.group_name, pair.domestic_symbol)
+        overseas_symbol = self.context.preferred_overseas_symbols.get(pair.group_name, default_overseas_symbol(pair))
+        rows = self.build_chart_history(
+            pair,
+            domestic_symbol,
+            overseas_symbol,
+            start_ts=start_ts,
+            end_ts=end_ts,
+        )
+        points = self._spread_points_from_rows(rows)
+        if points:
+            return points
+        snapshot_rows = self.context.repository.fetch_history(
+            pair.group_name,
+            None,
+            start_ts=start_ts,
+            end_ts=end_ts,
+        )
+        return self._spread_points_from_rows(snapshot_rows)
+
+    def _spread_points_from_rows(self, rows: list[dict]) -> list[tuple[datetime, float]]:
+        points: list[tuple[datetime, float]] = []
+        for row in rows:
+            ts = self.parse_history_ts(row)
+            spread = row.get("spread")
+            if ts is None or spread is None:
+                continue
+            points.append((ts, float(spread)))
+        return points
+
     def normalize_history_range_key(self, range_key: str | None) -> str:
         if range_key in HISTORY_RANGE_CONFIG:
             return str(range_key)
@@ -687,7 +739,7 @@ class HistoryService:
         self,
         group_name: str,
         *,
-        interval: str = "5m",
+        interval: str = "15m",
         range_key: str | None = None,
         start_ts: str | None = None,
         end_ts: str | None = None,
@@ -837,7 +889,7 @@ class HistoryService:
         self,
         group_name: str,
         *,
-        interval: str = "60m",
+        interval: str = "15m",
         range_key: str | None = None,
         start_ts: str | None = None,
         end_ts: str | None = None,
@@ -999,6 +1051,7 @@ class HistoryService:
                 interval=overseas_interval,
                 range_key=range_key,
             )
+        self.refresh_spread_windows_from_local_history()
 
     async def maybe_backfill_tqsdk_shadow_history(self) -> None:
         if not self.context.config.app.tqsdk_shadow_enabled or not self.context.config.app.tqsdk_startup_backfill_enabled:

@@ -16,21 +16,21 @@ HISTORY_RANGE_CONFIG: dict[str, dict[str, int | timedelta | None]] = {
 }
 
 OVERSEAS_HISTORY_INTERVAL_BY_RANGE = {
-    "24h": "5m",
+    "24h": "15m",
     "7d": "15m",
-    "30d": "60m",
-    "90d": "4h",
-    "1y": "1d",
-    "all": "1d",
+    "30d": "15m",
+    "90d": "15m",
+    "1y": "15m",
+    "all": "15m",
 }
 
 DOMESTIC_HISTORY_INTERVAL_BY_RANGE = {
-    "24h": "5m",
+    "24h": "15m",
     "7d": "15m",
-    "30d": "30m",
-    "90d": "60m",
-    "1y": "1d",
-    "all": "1d",
+    "30d": "15m",
+    "90d": "15m",
+    "1y": "15m",
+    "all": "15m",
 }
 
 FX_ALIGNMENT_TOLERANCE_SEC = 300

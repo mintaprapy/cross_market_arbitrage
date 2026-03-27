@@ -129,14 +129,17 @@ class SnapshotBuilder:
                 status = "stale"
                 errors.append("data_quality: quote timestamps are too far apart")
 
+        snapshot_ts = utc_now()
         window = self.context.windows[pair.group_name]
         rolling_mean = rolling_std = zscore = delta_spread = None
         if spread is not None:
-            rolling_mean, rolling_std, zscore, delta_spread = window.summary(spread)
+            rolling_mean, rolling_std, zscore, delta_spread = window.summary(
+                spread,
+                current_ts=snapshot_ts,
+            )
             if status == "ok":
-                window.append(spread)
+                window.append(spread, ts=snapshot_ts)
 
-        snapshot_ts = utc_now()
         snapshot = SpreadSnapshot(
             ts=snapshot_ts,
             ts_local=snapshot_ts.astimezone(self.context.local_tz),

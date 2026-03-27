@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from cross_market_monitor.application.common import default_overseas_symbol, utc_now
@@ -124,10 +124,16 @@ class MonitorService:
             for source_name, source_config in config.sources.items()
         }
         self.notifiers = [build_notifier(notifier) for notifier in config.notifiers if notifier.enabled]
+        zscore_max_age = (
+            timedelta(days=config.app.zscore_window_days)
+            if config.app.zscore_window_days > 0
+            else None
+        )
         self.windows = {
             pair.group_name: RollingWindow(
-                config.app.rolling_window_size,
-                seed=repository.load_recent_spreads(pair.group_name, config.app.rolling_window_size),
+                None,
+                max_age=zscore_max_age,
+                bucket_size=timedelta(minutes=15),
             )
             for pair in self._enabled_pairs
         }
@@ -182,6 +188,7 @@ class MonitorService:
 
         self._preload_cached_state()
         self.route_preferences.load_persisted_preferences()
+        self.history.refresh_spread_windows_from_local_history()
 
     @property
     def started_at(self) -> datetime:
@@ -260,19 +267,27 @@ class MonitorService:
         return self.route_preferences.get_domestic_route_options(group_name, refresh_dynamic=refresh_dynamic)
 
     def set_domestic_route_preference(self, group_name: str, symbol: str | None) -> dict:
-        return self.route_preferences.set_domestic_route_preference(group_name, symbol)
+        result = self.route_preferences.set_domestic_route_preference(group_name, symbol)
+        self.history.refresh_spread_windows_from_local_history(
+            self.route_preferences.linked_variant_groups(group_name)
+        )
+        return result
 
     def get_overseas_route_options(self, group_name: str) -> dict:
         return self.route_preferences.get_overseas_route_options(group_name)
 
     def set_overseas_route_preference(self, group_name: str, symbol: str | None) -> dict:
-        return self.route_preferences.set_overseas_route_preference(group_name, symbol)
+        result = self.route_preferences.set_overseas_route_preference(group_name, symbol)
+        self.history.refresh_spread_windows_from_local_history(
+            self.route_preferences.linked_variant_groups(group_name)
+        )
+        return result
 
     def backfill_domestic_history(
         self,
         group_name: str,
         *,
-        interval: str = "5m",
+        interval: str = "15m",
         range_key: str | None = None,
         start_ts: str | None = None,
         end_ts: str | None = None,
@@ -289,7 +304,7 @@ class MonitorService:
         self,
         group_name: str,
         *,
-        interval: str = "60m",
+        interval: str = "15m",
         range_key: str | None = None,
         start_ts: str | None = None,
         end_ts: str | None = None,

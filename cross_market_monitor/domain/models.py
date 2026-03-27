@@ -147,6 +147,7 @@ class AppConfig(BaseModel):
     fx_max_age_sec: int = 86400
     history_limit: int = 1000
     rolling_window_size: int = 120
+    zscore_window_days: int = 30
     http_timeout_sec: int = 8
     sqlite_path: str = "data/monitor.db"
     fx_source: str = "frankfurter"

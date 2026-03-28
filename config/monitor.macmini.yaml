@@ -1,5 +1,5 @@
 imports:
-  - app.yaml
+  - app.macmini.yaml
   - sources.yaml
   - pairs.yaml
   - alert_thresholds.yaml

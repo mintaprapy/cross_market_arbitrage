@@ -9,8 +9,8 @@ app:
   zscore_window_days: 0
   http_timeout_sec: 8
   sqlite_path: data/monitor.db
-  fx_source: frankfurter
-  fx_backup_sources: []
+  fx_source: sina_fx
+  fx_backup_sources: [frankfurter]
   bind_host: 0.0.0.0
   bind_port: 6080
   export_dir: exports

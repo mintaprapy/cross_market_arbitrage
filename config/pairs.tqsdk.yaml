@@ -1,14 +1,16 @@
 pairs:
   - group_name: AU_XAU
-    domestic_source: sina_domestic
-    domestic_symbol: nf_AU0
-    domestic_label: SHFE AU Continuous
+    domestic_source: tqsdk_domestic
+    domestic_symbol: KQ.m@SHFE.au
+    domestic_label: TqSdk SHFE AU Main
     domestic_history_source: tqsdk_domestic
+    domestic_history_symbol: KQ.m@SHFE.au
+    domestic_history_label: TqSdk SHFE AU Main
     domestic_product_code: au
     domestic_candidates:
-      - source: sina_domestic
-        symbol: nf_AU0
-        label: SHFE AU Continuous
+      - source: tqsdk_domestic
+        symbol: KQ.m@SHFE.au
+        label: TqSdk SHFE AU Main
     overseas_source: binance_futures
     overseas_symbol: XAUUSDT
     overseas_label: Binance XAUUSDT Perpetual
@@ -50,15 +52,17 @@ pairs:
       holding_hours: 24
 
   - group_name: AG_XAG_GROSS
-    domestic_source: sina_domestic
-    domestic_symbol: nf_AG0
-    domestic_label: SHFE AG Continuous
+    domestic_source: tqsdk_domestic
+    domestic_symbol: KQ.m@SHFE.ag
+    domestic_label: TqSdk SHFE AG Main
     domestic_history_source: tqsdk_domestic
+    domestic_history_symbol: KQ.m@SHFE.ag
+    domestic_history_label: TqSdk SHFE AG Main
     domestic_product_code: ag
     domestic_candidates:
-      - source: sina_domestic
-        symbol: nf_AG0
-        label: SHFE AG Continuous
+      - source: tqsdk_domestic
+        symbol: KQ.m@SHFE.ag
+        label: TqSdk SHFE AG Main
     overseas_source: binance_futures
     overseas_symbol: XAGUSDT
     overseas_label: Binance XAGUSDT Perpetual
@@ -100,15 +104,17 @@ pairs:
       holding_hours: 24
 
   - group_name: AG_XAG_NET
-    domestic_source: sina_domestic
-    domestic_symbol: nf_AG0
-    domestic_label: SHFE AG Continuous
+    domestic_source: tqsdk_domestic
+    domestic_symbol: KQ.m@SHFE.ag
+    domestic_label: TqSdk SHFE AG Main
     domestic_history_source: tqsdk_domestic
+    domestic_history_symbol: KQ.m@SHFE.ag
+    domestic_history_label: TqSdk SHFE AG Main
     domestic_product_code: ag
     domestic_candidates:
-      - source: sina_domestic
-        symbol: nf_AG0
-        label: SHFE AG Continuous
+      - source: tqsdk_domestic
+        symbol: KQ.m@SHFE.ag
+        label: TqSdk SHFE AG Main
     overseas_source: binance_futures
     overseas_symbol: XAGUSDT
     overseas_label: Binance XAGUSDT Perpetual
@@ -150,15 +156,17 @@ pairs:
       holding_hours: 24
 
   - group_name: CU_COPPER_GROSS
-    domestic_source: sina_domestic
-    domestic_symbol: nf_CU0
-    domestic_label: SHFE CU Continuous
+    domestic_source: tqsdk_domestic
+    domestic_symbol: KQ.m@SHFE.cu
+    domestic_label: TqSdk SHFE CU Main
     domestic_history_source: tqsdk_domestic
+    domestic_history_symbol: KQ.m@SHFE.cu
+    domestic_history_label: TqSdk SHFE CU Main
     domestic_product_code: cu
     domestic_candidates:
-      - source: sina_domestic
-        symbol: nf_CU0
-        label: SHFE CU Continuous
+      - source: tqsdk_domestic
+        symbol: KQ.m@SHFE.cu
+        label: TqSdk SHFE CU Main
     overseas_source: binance_futures
     overseas_symbol: COPPERUSDT
     overseas_label: Binance COPPERUSDT Perpetual
@@ -197,15 +205,17 @@ pairs:
       holding_hours: 24
 
   - group_name: CU_COPPER_NET
-    domestic_source: sina_domestic
-    domestic_symbol: nf_CU0
-    domestic_label: SHFE CU Continuous
+    domestic_source: tqsdk_domestic
+    domestic_symbol: KQ.m@SHFE.cu
+    domestic_label: TqSdk SHFE CU Main
     domestic_history_source: tqsdk_domestic
+    domestic_history_symbol: KQ.m@SHFE.cu
+    domestic_history_label: TqSdk SHFE CU Main
     domestic_product_code: cu
     domestic_candidates:
-      - source: sina_domestic
-        symbol: nf_CU0
-        label: SHFE CU Continuous
+      - source: tqsdk_domestic
+        symbol: KQ.m@SHFE.cu
+        label: TqSdk SHFE CU Main
     overseas_source: binance_futures
     overseas_symbol: COPPERUSDT
     overseas_label: Binance COPPERUSDT Perpetual
@@ -244,15 +254,17 @@ pairs:
       holding_hours: 24
 
   - group_name: BC_COPPER
-    domestic_source: sina_domestic
-    domestic_symbol: nf_BC0
-    domestic_label: INE BC Continuous
+    domestic_source: tqsdk_domestic
+    domestic_symbol: KQ.m@INE.bc
+    domestic_label: TqSdk INE BC Main
     domestic_history_source: tqsdk_domestic
+    domestic_history_symbol: KQ.m@INE.bc
+    domestic_history_label: TqSdk INE BC Main
     domestic_product_code: bc
     domestic_candidates:
-      - source: sina_domestic
-        symbol: nf_BC0
-        label: INE BC Continuous
+      - source: tqsdk_domestic
+        symbol: KQ.m@INE.bc
+        label: TqSdk INE BC Main
     overseas_source: binance_futures
     overseas_symbol: COPPERUSDT
     overseas_label: Binance COPPERUSDT Perpetual
@@ -285,15 +297,17 @@ pairs:
       holding_hours: 24
 
   - group_name: SC_CL
-    domestic_source: sina_domestic
-    domestic_symbol: nf_SC0
-    domestic_label: INE SC Continuous
+    domestic_source: tqsdk_domestic
+    domestic_symbol: KQ.m@INE.sc
+    domestic_label: TqSdk INE SC Main
     domestic_history_source: tqsdk_domestic
+    domestic_history_symbol: KQ.m@INE.sc
+    domestic_history_label: TqSdk INE SC Main
     domestic_product_code: sc
     domestic_candidates:
-      - source: sina_domestic
-        symbol: nf_SC0
-        label: INE SC Continuous
+      - source: tqsdk_domestic
+        symbol: KQ.m@INE.sc
+        label: TqSdk INE SC Main
     overseas_source: okx_swap
     overseas_symbol: CL-USDT-SWAP
     overseas_label: OKX CL Swap
@@ -342,15 +356,17 @@ pairs:
       holding_hours: 24
 
   - group_name: AL_ALUMINIUM
-    domestic_source: sina_domestic
-    domestic_symbol: nf_AL0
-    domestic_label: SHFE AL Continuous
+    domestic_source: tqsdk_domestic
+    domestic_symbol: KQ.m@SHFE.al
+    domestic_label: TqSdk SHFE AL Main
     domestic_history_source: tqsdk_domestic
+    domestic_history_symbol: KQ.m@SHFE.al
+    domestic_history_label: TqSdk SHFE AL Main
     domestic_product_code: al
     domestic_candidates:
-      - source: sina_domestic
-        symbol: nf_AL0
-        label: SHFE AL Continuous
+      - source: tqsdk_domestic
+        symbol: KQ.m@SHFE.al
+        label: TqSdk SHFE AL Main
     overseas_source: hyperliquid_xyz
     overseas_symbol: xyz:ALUMINIUM
     overseas_label: Hyperliquid XYZ ALUMINIUM
@@ -380,15 +396,17 @@ pairs:
       holding_hours: 24
 
   - group_name: B_SOYBEAN
-    domestic_source: sina_domestic
-    domestic_symbol: nf_B0
-    domestic_label: DCE B Continuous
+    domestic_source: tqsdk_domestic
+    domestic_symbol: KQ.m@DCE.b
+    domestic_label: TqSdk DCE B Main
     domestic_history_source: tqsdk_domestic
+    domestic_history_symbol: KQ.m@DCE.b
+    domestic_history_label: TqSdk DCE B Main
     domestic_product_code: b
     domestic_candidates:
-      - source: sina_domestic
-        symbol: nf_B0
-        label: DCE B Continuous
+      - source: tqsdk_domestic
+        symbol: KQ.m@DCE.b
+        label: TqSdk DCE B Main
     overseas_source: gate_tradfi
     overseas_symbol: SOYBEAN
     overseas_label: Gate TradFi SOYBEAN
@@ -418,18 +436,20 @@ pairs:
       holding_hours: 24
 
   - group_name: CF_COTTON
-    domestic_source: sina_domestic
-    domestic_symbol: nf_CF0
-    domestic_label: CZCE CF Continuous
+    domestic_source: tqsdk_domestic
+    domestic_symbol: KQ.m@CZCE.CF
+    domestic_label: TqSdk CZCE CF Main
     domestic_history_source: tqsdk_domestic
+    domestic_history_symbol: KQ.m@CZCE.CF
+    domestic_history_label: TqSdk CZCE CF Main
     domestic_product_code: cf
+    domestic_candidates:
+      - source: tqsdk_domestic
+        symbol: KQ.m@CZCE.CF
+        label: TqSdk CZCE CF Main
     overseas_source: gate_tradfi
     overseas_symbol: COTTON
     overseas_label: Gate TradFi COTTON
-    domestic_candidates:
-      - source: sina_domestic
-        symbol: nf_CF0
-        label: CZCE CF Continuous
     overseas_candidates:
       - source: gate_tradfi
         symbol: COTTON
@@ -456,18 +476,20 @@ pairs:
       holding_hours: 24
 
   - group_name: SR_SUGAR
-    domestic_source: sina_domestic
-    domestic_symbol: nf_SR0
-    domestic_label: CZCE SR Continuous
+    domestic_source: tqsdk_domestic
+    domestic_symbol: KQ.m@CZCE.SR
+    domestic_label: TqSdk CZCE SR Main
     domestic_history_source: tqsdk_domestic
+    domestic_history_symbol: KQ.m@CZCE.SR
+    domestic_history_label: TqSdk CZCE SR Main
     domestic_product_code: sr
+    domestic_candidates:
+      - source: tqsdk_domestic
+        symbol: KQ.m@CZCE.SR
+        label: TqSdk CZCE SR Main
     overseas_source: gate_tradfi
     overseas_symbol: SUGAR
     overseas_label: Gate TradFi SUGAR
-    domestic_candidates:
-      - source: sina_domestic
-        symbol: nf_SR0
-        label: CZCE SR Continuous
     overseas_candidates:
       - source: gate_tradfi
         symbol: SUGAR

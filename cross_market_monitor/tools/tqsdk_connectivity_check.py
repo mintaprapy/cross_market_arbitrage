@@ -13,7 +13,7 @@ from zoneinfo import ZoneInfo
 
 from tqsdk import TqApi, TqAuth
 
-from cross_market_monitor.application.common import is_within_trading_sessions
+from cross_market_monitor.application.common import active_trading_session_window
 from cross_market_monitor.infrastructure.config_loader import load_config
 
 DEFAULT_CONFIG = Path(__file__).resolve().parents[2] / "config" / "monitor.yaml"
@@ -29,6 +29,10 @@ TQ_SYMBOLS = {
     "cu": "KQ.m@SHFE.cu",
     "bc": "KQ.m@INE.bc",
     "sc": "KQ.m@INE.sc",
+    "al": "KQ.m@SHFE.al",
+    "b": "KQ.m@DCE.b",
+    "cf": "KQ.m@CZCE.CF",
+    "sr": "KQ.m@CZCE.SR",
 }
 
 
@@ -62,6 +66,20 @@ def _safe_age_sec(quote_ts: datetime | None, *, now: datetime) -> float | None:
     if quote_ts is None:
         return None
     return round(max((now - quote_ts).total_seconds(), 0.0), 3)
+
+
+def _effective_age_sec(
+    quote_ts: datetime | None,
+    *,
+    now: datetime,
+    session_start_utc: datetime | None,
+) -> float | None:
+    if quote_ts is None:
+        return None
+    reference_ts = quote_ts
+    if session_start_utc is not None and reference_ts < session_start_utc:
+        reference_ts = session_start_utc
+    return _safe_age_sec(reference_ts, now=now)
 
 
 def _latency_summary(values: list[float]) -> dict[str, float | None]:
@@ -116,9 +134,9 @@ class SymbolStats:
         if self.out_of_session_ages is None:
             self.out_of_session_ages = []
 
-    def classify_timestamp(self, cycle_ts: datetime) -> bool:
+    def active_session_window(self, cycle_ts: datetime) -> tuple[datetime, datetime] | None:
         local_dt = cycle_ts.astimezone(ZoneInfo(self.timezone_name))
-        return is_within_trading_sessions(
+        return active_trading_session_window(
             local_dt,
             self.trading_sessions_local,
             non_trading_dates=self.non_trading_dates_local,
@@ -309,14 +327,17 @@ def run_check(args: argparse.Namespace) -> int:
                 resolved_symbol = getattr(quote, "underlying_symbol", None)
                 if resolved_symbol:
                     stat.resolved_symbols.add(str(resolved_symbol))
-                in_session = stat.classify_timestamp(cycle_ts)
+                session_window = stat.active_session_window(cycle_ts)
+                in_session = session_window is not None
+                session_start_utc = session_window[0].astimezone(UTC) if session_window is not None else None
                 if in_session:
                     stat.in_session_cycles += 1
                 else:
                     stat.out_of_session_cycles += 1
 
                 if last_price is not None and quote_ts is not None:
-                    age_sec = _safe_age_sec(quote_ts, now=cycle_ts)
+                    raw_age_sec = _safe_age_sec(quote_ts, now=cycle_ts)
+                    age_sec = _effective_age_sec(quote_ts, now=cycle_ts, session_start_utc=session_start_utc)
                     stat.success += 1
                     if age_sec is not None:
                         stat.ages.append(age_sec)
@@ -334,6 +355,7 @@ def run_check(args: argparse.Namespace) -> int:
                             "resolved_symbol": resolved_symbol,
                             "price": float(last_price),
                             "quote_ts": quote_ts,
+                            "raw_age_sec": raw_age_sec,
                             "age_sec": age_sec,
                             "in_trading_session": in_session,
                             "stale_in_session": bool(in_session and age_sec is not None and age_sec > stat.stale_seconds),
@@ -345,7 +367,9 @@ def run_check(args: argparse.Namespace) -> int:
                 else:
                     stat.fail += 1
                     if in_session:
-                        stat.stale_in_session_count += 1
+                        session_age_sec = _safe_age_sec(session_start_utc, now=cycle_ts)
+                        if session_age_sec is None or session_age_sec > stat.stale_seconds:
+                            stat.stale_in_session_count += 1
                     if last_price is None and quote_ts is None:
                         stat.errors["missing_price_and_datetime"] += 1
                     elif last_price is None:

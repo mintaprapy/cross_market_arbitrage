@@ -4,10 +4,21 @@ from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
 
 from cross_market_monitor.domain.models import SourceConfig
-from cross_market_monitor.infrastructure.marketdata.tqsdk import TqSdkMainAdapter
+from cross_market_monitor.infrastructure.marketdata.tqsdk import TqSdkMainAdapter, tqsdk_main_symbol_for_product
 
 
 class TqSdkMainAdapterTests(unittest.TestCase):
+    def test_tqsdk_main_symbol_mapping_covers_all_runtime_products(self) -> None:
+        self.assertEqual(tqsdk_main_symbol_for_product("au"), "KQ.m@SHFE.au")
+        self.assertEqual(tqsdk_main_symbol_for_product("ag"), "KQ.m@SHFE.ag")
+        self.assertEqual(tqsdk_main_symbol_for_product("cu"), "KQ.m@SHFE.cu")
+        self.assertEqual(tqsdk_main_symbol_for_product("bc"), "KQ.m@INE.bc")
+        self.assertEqual(tqsdk_main_symbol_for_product("sc"), "KQ.m@INE.sc")
+        self.assertEqual(tqsdk_main_symbol_for_product("al"), "KQ.m@SHFE.al")
+        self.assertEqual(tqsdk_main_symbol_for_product("b"), "KQ.m@DCE.b")
+        self.assertEqual(tqsdk_main_symbol_for_product("cf"), "KQ.m@CZCE.CF")
+        self.assertEqual(tqsdk_main_symbol_for_product("sr"), "KQ.m@CZCE.SR")
+
     def test_credentials_prefer_config_over_environment(self) -> None:
         adapter = TqSdkMainAdapter(
             "tqsdk_domestic",

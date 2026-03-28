@@ -179,11 +179,9 @@ def collect_repo_artifacts(output_dir: Path, config_path: Path, config) -> None:
     if config.app.domestic_trading_calendar_path:
         copy_optional_file(Path(config.app.domestic_trading_calendar_path), output_dir / Path(config.app.domestic_trading_calendar_path).name)
     copy_optional_file(ROOT / "systemd" / "cross-market-monitor.service", output_dir / "cross-market-monitor.repo.service")
-    copy_optional_file(ROOT / "deploy" / "systemd" / "cross-market-monitor.service", output_dir / "cross-market-monitor.legacy.repo.service")
     copy_optional_file(Path("/etc/systemd/system/cross-market-monitor.service"), output_dir / "cross-market-monitor.installed.service")
     copy_optional_file(Path("/etc/systemd/system/cross-market-monitor-worker.service"), output_dir / "cross-market-monitor-worker.installed.service")
     copy_optional_file(Path("/etc/systemd/system/cross-market-monitor-api.service"), output_dir / "cross-market-monitor-api.installed.service")
-    copy_optional_file(ROOT / "deploy" / "nginx" / "cross-market-monitor.conf", output_dir / "cross-market-monitor.repo.nginx.conf")
     copy_optional_file(Path("/etc/nginx/sites-available/cross-market-monitor"), output_dir / "cross-market-monitor.installed.nginx.conf")
 
     results = {

@@ -22,6 +22,10 @@ TQ_MAIN_SYMBOLS = {
     "cu": "KQ.m@SHFE.cu",
     "sc": "KQ.m@INE.sc",
     "bc": "KQ.m@INE.bc",
+    "al": "KQ.m@SHFE.al",
+    "b": "KQ.m@DCE.b",
+    "cf": "KQ.m@CZCE.CF",
+    "sr": "KQ.m@CZCE.SR",
 }
 
 TQ_INTERVAL_SECONDS = {

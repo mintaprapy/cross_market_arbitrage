@@ -25,7 +25,7 @@ python3 scripts/export_runtime_diagnostics.py --hours 12
 
 ## 正式上线执行命令
 
-以下命令按 Ubuntu 服务器首次上线顺序执行，默认项目目录为 `/srv/cross_market_arbitrage`。要求 `Python 3.10+`，推荐 `Ubuntu 22.04+`：
+以下命令按 Ubuntu 服务器首次上线顺序执行，默认项目目录为 `/srv/cross_market_arbitrage`。要求 `Python 3.10+`，推荐 `Ubuntu 22.04+`。
 
 1. 安装系统依赖
 
@@ -34,7 +34,7 @@ sudo apt-get update
 sudo apt-get install -y git curl python3 python3-venv python3-pip nginx
 ```
 
-2. 准备代码和本地配置
+2. 拉代码并准备本地配置
 
 ```bash
 cd /srv
@@ -46,7 +46,6 @@ cp config/local.example.yaml config/local.yaml
 3. 创建虚拟环境并安装依赖
 
 ```bash
-cd /srv/cross_market_arbitrage
 python3 -m venv .venv
 . .venv/bin/activate
 python -m pip install --upgrade pip
@@ -59,62 +58,49 @@ python -m pip install -e ".[tqsdk,parquet]"
 python -m pip install -e ".[tqsdk]"
 ```
 
-`install-ubuntu.sh` 会复用这套虚拟环境；如果 `.venv` 不存在，它也会自动创建。
-
-4. 检查本地配置
-
-```bash
-editor config/monitor.yaml
-editor config/app.yaml
-editor config/sources.yaml
-editor config/pairs.yaml
-editor config/alert_thresholds.yaml
-editor config/local.yaml
-```
+4. 检查配置
 
 至少确认这些字段：
 
 - `config/app.yaml` 里的 `sqlite_path / export_dir / domestic_trading_calendar_path`
 - `config/local.yaml` 里的 `sources.tqsdk_domestic.params.auth_user`
 - `config/local.yaml` 里的 `sources.tqsdk_domestic.params.auth_password`
-- `config/local.yaml` 里的 `sources.tqsdk_domestic.params.md_url`（如需要）
+- `config/local.yaml` 里的 `sources.tqsdk_domestic.params.md_url`
 - `config/local.yaml` 里的通知渠道配置
 
-5. 执行安装脚本
+5. 安装 systemd 服务
 
 ```bash
-sudo ./deploy/bin/install-ubuntu.sh
+sudo cp systemd/cross-market-monitor.service /etc/systemd/system/cross-market-monitor.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now cross-market-monitor
 ```
 
-默认会使用当前执行 `sudo` 的用户作为 `APP_USER` / `APP_GROUP`。如果你要改成其他账号，可以这样执行：
+如果服务器运行用户不是 `ubuntu`，先修改 [cross-market-monitor.service](/Users/m2/Desktop/Codex2026/cross_market_arbitrage/systemd/cross-market-monitor.service) 里的：
 
-```bash
-sudo APP_USER=ubuntu APP_GROUP=ubuntu ./deploy/bin/install-ubuntu.sh
-```
+- `User`
+- `Group`
+- `WorkingDirectory`
+- `ExecStart`
+- `ReadWritePaths`
 
-6. 执行上线后自检
-
-```bash
-sudo ./deploy/bin/post-deploy-check.sh
-```
-
-7. 查看服务状态和日志
+6. 验证服务
 
 ```bash
 sudo systemctl status cross-market-monitor --no-pager
 sudo journalctl -u cross-market-monitor -n 100 --no-pager
-```
-
-8. 验证页面和接口
-
-```bash
 curl -fsS http://localhost:6080/api/health | python3 -m json.tool
 curl -fsS http://localhost:6080/api/snapshot | python3 -m json.tool | head
 ```
 
-这里用 `localhost` 是服务器本机自检口径；服务默认监听的是 `0.0.0.0:6080`。
+7. 如需接 Nginx，再手动写站点配置并 reload
 
-如果服务器装了 `nginx`，`install-ubuntu.sh` 会一并渲染并加载站点配置；如需正式域名，部署前把 `SERVER_NAME` 环境变量传给脚本，或修改 [cross-market-monitor.conf](/Users/m2/Desktop/Codex2026/cross_market_arbitrage/deploy/nginx/cross-market-monitor.conf)。
+```bash
+sudo editor /etc/nginx/sites-available/cross-market-monitor
+sudo ln -sf /etc/nginx/sites-available/cross-market-monitor /etc/nginx/sites-enabled/cross-market-monitor
+sudo nginx -t
+sudo systemctl reload nginx
+```
 
 ## 当前覆盖
 
@@ -125,8 +111,9 @@ curl -fsS http://localhost:6080/api/snapshot | python3 -m json.tool | head
 
 默认数据源与角色分工：
 
-- 国内主链路：Sina Futures 主连
-- 国内影子/历史：TqSdk 主连
+- 服务器默认国内主链路：TqSdk 主连
+- 本地 `start_macmini.sh` / `start_macmini_local.sh`：Sina Futures 主连
+- 国内历史：TqSdk 主连
 - 海外：Binance Futures、OKX Swap
 - 备用源：Hyperliquid、CME NYMEX 参考源
 - 汇率：Sina FX `fx_susdcny`，Frankfurter 备用
@@ -375,13 +362,9 @@ notifiers:
 
 ## Ubuntu systemd
 
-仓库里已经提供了一套 funding 风格的单服务部署模板：
+仓库里保留的是 funding 风格的顶层单服务模板：
 
 - [systemd/cross-market-monitor.service](/Users/m2/Desktop/Codex2026/cross_market_arbitrage/systemd/cross-market-monitor.service)
-- [deploy/systemd/cross-market-monitor.service](/Users/m2/Desktop/Codex2026/cross_market_arbitrage/deploy/systemd/cross-market-monitor.service)
-- [deploy/nginx/cross-market-monitor.conf](/Users/m2/Desktop/Codex2026/cross_market_arbitrage/deploy/nginx/cross-market-monitor.conf)
-- [deploy/bin/install-ubuntu.sh](/Users/m2/Desktop/Codex2026/cross_market_arbitrage/deploy/bin/install-ubuntu.sh)
-- [deploy/bin/post-deploy-check.sh](/Users/m2/Desktop/Codex2026/cross_market_arbitrage/deploy/bin/post-deploy-check.sh)
 
 默认约定：
 
@@ -390,7 +373,7 @@ notifiers:
 - 真实配置：`/srv/cross_market_arbitrage/config/monitor.yaml`
 - 监听：`0.0.0.0:6080`
 
-推荐安装流程：
+推荐手动安装流程：
 
 ```bash
 cd /srv/cross_market_arbitrage
@@ -399,8 +382,9 @@ python3 -m venv .venv
 . .venv/bin/activate
 python -m pip install --upgrade pip
 python -m pip install -e ".[tqsdk,parquet]"
-sudo ./deploy/bin/install-ubuntu.sh
-sudo ./deploy/bin/post-deploy-check.sh
+sudo cp systemd/cross-market-monitor.service /etc/systemd/system/cross-market-monitor.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now cross-market-monitor
 ```
 
 如果不需要 `TqSdk` 历史回补和 `Parquet` 导出，也可以把安装命令改成：
@@ -409,7 +393,13 @@ sudo ./deploy/bin/post-deploy-check.sh
 python -m pip install -e .
 ```
 
-`install-ubuntu.sh` 会自动读取本地 [config/monitor.yaml](/Users/m2/Desktop/Codex2026/cross_market_arbitrage/config/monitor.yaml)，再跟随 `imports` 加载拆分后的配置文件，并据此渲染 systemd unit 里的配置路径、监听地址和 SQLite / export 目录。
+部署前需要按实际服务器路径手动检查 [cross-market-monitor.service](/Users/m2/Desktop/Codex2026/cross_market_arbitrage/systemd/cross-market-monitor.service) 里的：
+
+- `User`
+- `Group`
+- `WorkingDirectory`
+- `ExecStart`
+- `ReadWritePaths`
 
 查看日志：
 
@@ -458,7 +448,9 @@ cp config/local.example.yaml config/local.yaml
 
 4. systemd
 ```bash
-sudo ./deploy/bin/install-ubuntu.sh
+sudo cp systemd/cross-market-monitor.service /etc/systemd/system/cross-market-monitor.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now cross-market-monitor
 sudo systemctl status cross-market-monitor --no-pager
 ```
 
@@ -471,7 +463,7 @@ curl -sf "http://localhost:6080/api/card?group_name=AU_XAU&range_key=24h"
 
 6. Nginx
 ```bash
-sudo cp deploy/nginx/cross-market-monitor.conf /etc/nginx/sites-available/cross-market-monitor
+sudo editor /etc/nginx/sites-available/cross-market-monitor
 sudo ln -sf /etc/nginx/sites-available/cross-market-monitor /etc/nginx/sites-enabled/cross-market-monitor
 sudo nginx -t
 sudo systemctl reload nginx
@@ -536,7 +528,7 @@ server {
 常见安装步骤：
 
 ```bash
-sudo cp deploy/nginx/cross-market-monitor.conf /etc/nginx/sites-available/cross-market-monitor
+sudo editor /etc/nginx/sites-available/cross-market-monitor
 sudo ln -sf /etc/nginx/sites-available/cross-market-monitor /etc/nginx/sites-enabled/cross-market-monitor
 sudo nginx -t
 sudo systemctl reload nginx

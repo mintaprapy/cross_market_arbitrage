@@ -46,6 +46,9 @@ class RouteFetchResult:
     quote: MarketQuote | None
     error: str | None
     latency_ms: float
+    persist: bool = True
+    skipped: bool = False
+    skip_reason: str | None = None
 
 
 @dataclass(slots=True)
@@ -159,6 +162,10 @@ def infer_product_code(symbol: str) -> str | None:
         "nf_CU0": "cu",
         "nf_BC0": "bc",
         "nf_SC0": "sc",
+        "nf_AL0": "al",
+        "nf_B0": "b",
+        "nf_CF0": "cf",
+        "nf_SR0": "sr",
     }
     if symbol in mapping:
         return mapping[symbol]
@@ -193,15 +200,36 @@ def is_within_trading_sessions(
     local_dt: datetime,
     sessions: list[str],
     *,
+    lead_sec: int = 0,
     grace_sec: int = 0,
     non_trading_dates: list[str] | set[date] | None = None,
     weekends_closed: bool = True,
 ) -> bool:
+    return active_trading_session_window(
+        local_dt,
+        sessions,
+        lead_sec=lead_sec,
+        grace_sec=grace_sec,
+        non_trading_dates=non_trading_dates,
+        weekends_closed=weekends_closed,
+    ) is not None
+
+
+def active_trading_session_window(
+    local_dt: datetime,
+    sessions: list[str],
+    *,
+    lead_sec: int = 0,
+    grace_sec: int = 0,
+    non_trading_dates: list[str] | set[date] | None = None,
+    weekends_closed: bool = True,
+) -> tuple[datetime, datetime] | None:
     if not sessions:
-        return True
+        return None
     timezone = local_dt.tzinfo
     if timezone is None:
-        return False
+        return None
+    parsed_non_trading_dates = parse_non_trading_dates(non_trading_dates)
     for session in sessions:
         try:
             start_text, end_text = session.split("-", 1)
@@ -209,17 +237,24 @@ def is_within_trading_sessions(
             end_time = time.fromisoformat(end_text)
         except ValueError:
             continue
-        if _session_matches(
-            local_dt,
-            timezone,
-            start_time,
-            end_time,
-            grace_sec,
-            non_trading_dates=non_trading_dates,
-            weekends_closed=weekends_closed,
-        ):
-            return True
-    return False
+        anchor_dates = [local_dt.date()]
+        if end_time <= start_time:
+            anchor_dates.append(local_dt.date() - timedelta(days=1))
+        for anchor_date in anchor_dates:
+            window = _session_window_for_anchor(
+                anchor_date,
+                timezone,
+                start_time,
+                end_time,
+                non_trading_dates=parsed_non_trading_dates,
+                weekends_closed=weekends_closed,
+            )
+            if window is None:
+                continue
+            start_dt, end_dt = window
+            if start_dt - timedelta(seconds=lead_sec) <= local_dt <= end_dt + timedelta(seconds=grace_sec):
+                return start_dt, end_dt
+    return None
 
 
 def latest_session_end_before(

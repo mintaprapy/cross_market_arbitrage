@@ -48,6 +48,43 @@
       return numeric === null ? "--" : `${numeric.toFixed(2)}%`;
     }
 
+    function erf(value) {
+      const sign = value < 0 ? -1 : 1;
+      const x = Math.abs(value);
+      const a1 = 0.254829592;
+      const a2 = -0.284496736;
+      const a3 = 1.421413741;
+      const a4 = -1.453152027;
+      const a5 = 1.061405429;
+      const p = 0.3275911;
+      const t = 1 / (1 + p * x);
+      const y = 1 - (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t * Math.exp(-x * x);
+      return sign * y;
+    }
+
+    function normalCdf(value) {
+      const numeric = toFiniteNumber(value);
+      if (numeric === null) return null;
+      return 0.5 * (1 + erf(numeric / Math.sqrt(2)));
+    }
+
+    function zScoreCentralProbability(value) {
+      const numeric = toFiniteNumber(value);
+      if (numeric === null) return null;
+      return Math.max(0, Math.min(1, 2 * normalCdf(Math.abs(numeric)) - 1));
+    }
+
+    function zScoreTwoTailProbability(value) {
+      const central = zScoreCentralProbability(value);
+      if (central === null) return null;
+      return Math.max(0, Math.min(1, 1 - central));
+    }
+
+    function formatProbabilityLabel(value) {
+      const central = zScoreCentralProbability(value);
+      return central === null ? "±|Z| 概率 --" : `±|Z| 概率 ${formatPct(central)}`;
+    }
+
     function formatTableNumber(value, digits = 2) {
       const numeric = toFiniteNumber(value);
       if (numeric === null) return "--";
@@ -121,7 +158,7 @@
     const ALERT_CATEGORY_LABELS = {
       spread_pct: "价差百分比",
       spread_level: "价差阈值",
-      zscore: "Z 分数",
+      zscore: "Z-Score",
       data_quality: "数据质量",
       fx: "汇率",
     };
@@ -187,6 +224,7 @@
       { key: "1y", label: "1年" },
       { key: "all", label: "全部" },
     ];
+    const Z_SCORE_REFERENCE_VALUES = [0.5, 1, 1.5, 2, 2.5, 3, 4];
     const CARD_CHART_STATE = {};
 
     function loadCardSelections() {
@@ -258,6 +296,103 @@
 
     function buildCardElementId(cardKey) {
       return `card-${sanitizeDomId(cardKey)}`;
+    }
+
+    function buildZScoreModal(cardTitle, zscore) {
+      const numeric = toFiniteNumber(zscore);
+      const centralProbability = zScoreCentralProbability(numeric);
+      const twoTailProbability = zScoreTwoTailProbability(numeric);
+      const oneTailProbability = twoTailProbability === null ? null : twoTailProbability / 2;
+      const closestReference = numeric === null
+        ? null
+        : Z_SCORE_REFERENCE_VALUES.reduce((best, value) => (
+            best === null || Math.abs(Math.abs(numeric) - value) < Math.abs(Math.abs(numeric) - best)
+              ? value
+              : best
+          ), null);
+      const rows = Z_SCORE_REFERENCE_VALUES.map((value) => {
+        const central = zScoreCentralProbability(value);
+        const twoTail = zScoreTwoTailProbability(value);
+        const active = closestReference !== null && value === closestReference ? " active" : "";
+        return `
+          <tr class="zscore-reference-row${active}">
+            <td>${escapeHtml(formatNumber(value, 2))}</td>
+            <td>${escapeHtml(formatPct(central))}</td>
+            <td>${escapeHtml(formatPct(twoTail))}</td>
+            <td>${escapeHtml(formatPct(twoTail === null ? null : twoTail / 2))}</td>
+          </tr>
+        `;
+      }).join("");
+      return `
+        <div class="zscore-modal-shell" onclick="closeZScoreReference(event)">
+          <div class="zscore-modal" role="dialog" aria-modal="true" aria-labelledby="zscore-modal-title" onclick="event.stopPropagation()">
+            <div class="zscore-modal-head">
+              <div class="zscore-modal-title">
+                <strong id="zscore-modal-title">${escapeHtml(cardTitle)} Z-Score 分布参考</strong>
+                <span>以标准正态分布估算当前 |Z| 所处概率位置。</span>
+              </div>
+              <button type="button" class="zscore-modal-close" onclick="closeZScoreReference(event)">关闭</button>
+            </div>
+            <div class="zscore-modal-summary">
+              <div class="zscore-summary-item">
+                <label>当前 Z-Score</label>
+                <strong>${escapeHtml(formatNumber(numeric, 2))}</strong>
+              </div>
+              <div class="zscore-summary-item">
+                <label>±|Z| 概率</label>
+                <strong>${escapeHtml(formatPct(centralProbability))}</strong>
+              </div>
+              <div class="zscore-summary-item">
+                <label>双侧尾部概率</label>
+                <strong>${escapeHtml(formatPct(twoTailProbability))}</strong>
+              </div>
+              <div class="zscore-summary-item">
+                <label>单侧尾部概率</label>
+                <strong>${escapeHtml(formatPct(oneTailProbability))}</strong>
+              </div>
+            </div>
+            <table class="zscore-reference-table">
+              <thead>
+                <tr>
+                  <th>|Z|</th>
+                  <th>±|Z| 概率</th>
+                  <th>双侧尾部</th>
+                  <th>单侧尾部</th>
+                </tr>
+              </thead>
+              <tbody>${rows}</tbody>
+            </table>
+          </div>
+        </div>
+      `;
+    }
+
+    function ensureZScoreModalRoot() {
+      let root = document.getElementById("zscore-modal-root");
+      if (!root) {
+        root = document.createElement("div");
+        root.id = "zscore-modal-root";
+        document.body.appendChild(root);
+      }
+      return root;
+    }
+
+    function openZScoreReference(cardKey) {
+      const card = document.getElementById(buildCardElementId(cardKey));
+      if (!card) return;
+      const zscoreValue = card.querySelector('[data-card-field="zscore"]')?.textContent ?? "--";
+      const title = card.querySelector(".title strong")?.textContent ?? "监控组";
+      const root = ensureZScoreModalRoot();
+      root.innerHTML = buildZScoreModal(title, zscoreValue);
+      document.body.classList.add("modal-open");
+    }
+
+    function closeZScoreReference(_event) {
+      const root = document.getElementById("zscore-modal-root");
+      if (root) {
+        root.innerHTML = "";
+      }
+      document.body.classList.remove("modal-open");
     }
 
     function buildReplayRowId(cardKey) {
@@ -1349,8 +1484,9 @@
               <strong data-card-field="spread_pct">${formatPct(item.spread_pct)}</strong>
             </div>
             <div class="metric">
-              <label>Z 分数</label>
+              <button type="button" class="metric-trigger" onclick="openZScoreReference('${escapeHtml(cardGroup.card_key)}')">Z-Score</button>
               <strong data-card-field="zscore">${formatNumber(item.zscore, 2)}</strong>
+              <span class="metric-note" data-card-field="zscore_probability">${escapeHtml(formatProbabilityLabel(item.zscore))}</span>
             </div>
             <div class="metric">
               <label>汇率跳变</label>
@@ -1633,6 +1769,7 @@
         setCardField(card, "spread", formatNumber(item.spread, 4));
         setCardField(card, "spread_pct", formatPct(item.spread_pct));
         setCardField(card, "zscore", formatNumber(item.zscore, 2));
+        setCardField(card, "zscore_probability", formatProbabilityLabel(item.zscore));
         setCardField(card, "fx_jump_pct", formatPct(item.fx_jump_pct));
         setCardField(card, "signal_state", signalStateLabel(item.signal_state));
         setCardField(card, "normalized_last", formatNumber(item.normalized_last, 4));
@@ -1649,4 +1786,13 @@
         setCardField(card, "pause_reason", item.pause_reason || "");
       });
     }
+
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        closeZScoreReference();
+      }
+    });
+
+    window.openZScoreReference = openZScoreReference;
+    window.closeZScoreReference = closeZScoreReference;
   

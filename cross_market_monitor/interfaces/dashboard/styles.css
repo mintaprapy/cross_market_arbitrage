@@ -137,6 +137,112 @@
       font-family: "SF Mono", Menlo, monospace;
       font-size: 18px;
     }
+    .metric-note {
+      display: block;
+      margin-top: 6px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+    .metric-trigger {
+      display: inline-flex;
+      align-items: center;
+      width: fit-content;
+      padding: 0;
+      border: 0;
+      background: transparent;
+      color: var(--muted);
+      font-size: 12px;
+      letter-spacing: 0.04em;
+      cursor: pointer;
+    }
+    .metric-trigger:hover {
+      color: var(--text);
+    }
+    body.modal-open {
+      overflow: hidden;
+    }
+    #zscore-modal-root {
+      position: fixed;
+      inset: 0;
+      z-index: 40;
+      pointer-events: none;
+    }
+    .zscore-modal-shell {
+      position: fixed;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      padding: 24px;
+      background: rgba(4, 10, 16, 0.56);
+      pointer-events: auto;
+    }
+    .zscore-modal {
+      width: min(760px, 100%);
+      display: grid;
+      gap: 18px;
+      padding: 22px;
+      border-radius: 20px;
+      border: 1px solid var(--border);
+      background: rgba(10, 22, 33, 0.96);
+      box-shadow: 0 22px 48px rgba(0, 0, 0, 0.32);
+      backdrop-filter: blur(14px);
+    }
+    .zscore-modal-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+    }
+    .zscore-modal-title {
+      display: grid;
+      gap: 4px;
+    }
+    .zscore-modal-title strong {
+      font-size: 18px;
+    }
+    .zscore-modal-title span {
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+    .zscore-modal-close {
+      padding: 8px 12px;
+      border-radius: 999px;
+      border: 1px solid rgba(157, 201, 255, 0.16);
+      background: rgba(255, 255, 255, 0.03);
+      color: var(--text);
+      cursor: pointer;
+    }
+    .zscore-modal-summary {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+    }
+    .zscore-summary-item {
+      padding: 12px;
+      border-radius: 14px;
+      background: var(--panel-alt);
+      display: grid;
+      gap: 6px;
+    }
+    .zscore-summary-item label {
+      color: var(--muted);
+      font-size: 12px;
+      letter-spacing: 0.04em;
+    }
+    .zscore-summary-item strong {
+      font-family: "SF Mono", Menlo, monospace;
+      font-size: 16px;
+    }
+    .zscore-reference-table th,
+    .zscore-reference-table td {
+      text-align: center;
+      vertical-align: middle;
+    }
+    .zscore-reference-row.active {
+      background: rgba(244, 211, 94, 0.08);
+    }
     .selector {
       display: grid;
       gap: 6px;
@@ -556,9 +662,11 @@
       .shell { padding: 16px; }
       .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .route-grid { grid-template-columns: 1fr; }
+      .zscore-modal-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       th:nth-child(4), td:nth-child(4) { display: none; }
     }
     @media (max-width: 560px) {
       .metrics { grid-template-columns: 1fr; }
+      .zscore-modal-summary { grid-template-columns: 1fr; }
     }
   

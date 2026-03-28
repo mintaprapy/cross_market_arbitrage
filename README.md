@@ -300,6 +300,14 @@ python3 -m cross_market_monitor.tools.tqsdk_weekly_report --days 7
 - 生成一个带 `summary.json`、`REPORT.md` 和原始 JSON 副本的导出目录
 - 同时生成一个 `.tar.gz` 归档，方便从服务器下载
 - 在控制台直接打印 `is_stable`、`connect_success_rate` 和导出文件路径
+- 默认排除 `Asia/Hong_Kong` 时区下 `19:00-19:30` 的官方维护窗口
+- 默认不把 `refresh_latency_median_ms` 当成稳定性失败条件；如果需要启用，可显式传：
+
+```bash
+python3 -m cross_market_monitor.tools.tqsdk_weekly_report \
+  --days 7 \
+  --max-refresh-latency-median-ms 1000
+```
 
 ## 告警阈值与通知
 

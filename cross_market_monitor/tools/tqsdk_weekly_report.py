@@ -5,9 +5,10 @@ import json
 import shutil
 import statistics
 import tarfile
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, time, timedelta
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_INPUT_DIR = ROOT / "data" / "tqsdk_connectivity"
@@ -15,7 +16,8 @@ DEFAULT_OUTPUT_ROOT = ROOT / "exports"
 DEFAULT_DAYS = 7
 DEFAULT_MIN_CONNECT_SUCCESS_RATE = 0.99
 DEFAULT_MIN_IN_SESSION_FRESH_RATE = 0.99
-DEFAULT_MAX_REFRESH_LATENCY_MEDIAN_MS = 1000.0
+DEFAULT_EXCLUDE_WINDOWS = ("19:00-19:30",)
+DEFAULT_EXCLUDE_TIMEZONE = "Asia/Hong_Kong"
 PRODUCT_CODES = ("au", "ag", "cu", "bc", "sc")
 
 
@@ -58,6 +60,41 @@ def _latency_summary(values: list[float]) -> dict[str, float | None]:
     }
 
 
+def _parse_window_spec(value: str) -> tuple[time, time]:
+    text = value.strip()
+    if "-" not in text:
+        raise ValueError(f"Invalid window spec: {value}")
+    start_text, end_text = [item.strip() for item in text.split("-", 1)]
+    start = time.fromisoformat(start_text)
+    end = time.fromisoformat(end_text)
+    return start, end
+
+
+def _report_overlaps_window(report: dict[str, Any], *, window_spec: str, timezone_name: str) -> bool:
+    started_at = _parse_datetime(report.get("started_at")) or report.get("_report_ts")
+    ended_at = _parse_datetime(report.get("ended_at")) or report.get("_report_ts")
+    if not isinstance(started_at, datetime) or not isinstance(ended_at, datetime):
+        return False
+    if ended_at < started_at:
+        started_at, ended_at = ended_at, started_at
+
+    local_zone = ZoneInfo(timezone_name)
+    start_local = started_at.astimezone(local_zone)
+    end_local = ended_at.astimezone(local_zone)
+    window_start, window_end = _parse_window_spec(window_spec)
+
+    day = start_local.date()
+    while day <= end_local.date():
+        local_window_start = datetime.combine(day, window_start, tzinfo=local_zone)
+        local_window_end = datetime.combine(day, window_end, tzinfo=local_zone)
+        if local_window_end <= local_window_start:
+            local_window_end += timedelta(days=1)
+        if start_local < local_window_end and end_local > local_window_start:
+            return True
+        day += timedelta(days=1)
+    return False
+
+
 def load_recent_reports(input_dir: Path, *, days: int, now: datetime | None = None) -> list[dict[str, Any]]:
     current = now or _utc_now()
     cutoff = current - timedelta(days=days)
@@ -81,13 +118,45 @@ def load_recent_reports(input_dir: Path, *, days: int, now: datetime | None = No
     return reports
 
 
+def split_excluded_reports(
+    reports: list[dict[str, Any]],
+    *,
+    exclude_windows: list[str],
+    exclude_timezone: str,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    if not exclude_windows:
+        return reports, []
+
+    included: list[dict[str, Any]] = []
+    excluded: list[dict[str, Any]] = []
+    for report in reports:
+        matched_window = next(
+            (
+                window_spec
+                for window_spec in exclude_windows
+                if _report_overlaps_window(report, window_spec=window_spec, timezone_name=exclude_timezone)
+            ),
+            None,
+        )
+        if matched_window is None:
+            included.append(report)
+            continue
+        cloned = dict(report)
+        cloned["_excluded_window"] = matched_window
+        excluded.append(cloned)
+    return included, excluded
+
+
 def aggregate_reports(
     reports: list[dict[str, Any]],
     *,
     days: int,
     min_connect_success_rate: float,
     min_in_session_fresh_rate: float,
-    max_refresh_latency_median_ms: float,
+    max_refresh_latency_median_ms: float | None,
+    exclude_windows: list[str],
+    exclude_timezone: str,
+    excluded_reports: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     timestamps = [item["_report_ts"] for item in reports if isinstance(item.get("_report_ts"), datetime)]
     connect_successes = sum(1 for item in reports if item.get("connect_success"))
@@ -114,6 +183,7 @@ def aggregate_reports(
     refresh_latency = _latency_summary(refresh_medians)
     if (
         reports
+        and max_refresh_latency_median_ms is not None
         and refresh_latency["median_ms"] is not None
         and float(refresh_latency["median_ms"]) > max_refresh_latency_median_ms
     ):
@@ -193,6 +263,17 @@ def aggregate_reports(
             "min_in_session_fresh_rate": min_in_session_fresh_rate,
             "max_refresh_latency_median_ms": max_refresh_latency_median_ms,
         },
+        "excluded_windows": list(exclude_windows),
+        "excluded_timezone": exclude_timezone,
+        "excluded_report_count": len(excluded_reports or []),
+        "excluded_reports": [
+            {
+                "path": item.get("_path"),
+                "report_ts": item.get("_report_ts"),
+                "excluded_window": item.get("_excluded_window"),
+            }
+            for item in (excluded_reports or [])
+        ][:20],
         "overall": {
             "connect_success_count": connect_successes,
             "connect_failure_count": len(reports) - connect_successes,
@@ -218,6 +299,7 @@ def render_report(summary: dict[str, Any]) -> str:
         f"- generated_at: `{summary['generated_at']}`",
         f"- window_days: `{summary['window_days']}`",
         f"- report_count: `{summary['report_count']}`",
+        f"- excluded_report_count: `{summary.get('excluded_report_count', 0)}`",
         f"- period_start: `{summary.get('period_start') or '--'}`",
         f"- period_end: `{summary.get('period_end') or '--'}`",
         f"- is_stable: `{summary['is_stable']}`",
@@ -236,6 +318,8 @@ def render_report(summary: dict[str, Any]) -> str:
         f"- min_connect_success_rate: `{summary['thresholds']['min_connect_success_rate']}`",
         f"- min_in_session_fresh_rate: `{summary['thresholds']['min_in_session_fresh_rate']}`",
         f"- max_refresh_latency_median_ms: `{summary['thresholds']['max_refresh_latency_median_ms']}`",
+        f"- excluded_windows: `{summary.get('excluded_windows') or []}`",
+        f"- excluded_timezone: `{summary.get('excluded_timezone') or '--'}`",
         "",
         "## Per Product",
         "",
@@ -267,6 +351,15 @@ def render_report(summary: dict[str, Any]) -> str:
     if summary["breaches"]:
         for breach in summary["breaches"]:
             lines.append(f"- {breach}")
+    else:
+        lines.append("- none")
+
+    lines.extend(["", "## Excluded Reports", ""])
+    if summary.get("excluded_reports"):
+        for item in summary["excluded_reports"]:
+            lines.append(
+                f"- `{item.get('report_ts')}` `{item.get('path')}` excluded_window=`{item.get('excluded_window')}`"
+            )
     else:
         lines.append("- none")
 
@@ -321,6 +414,17 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--output-root", default=str(DEFAULT_OUTPUT_ROOT), help="Directory to store exported bundles")
     parser.add_argument("--days", type=int, default=DEFAULT_DAYS, help="Rolling window size in days")
     parser.add_argument(
+        "--exclude-window",
+        action="append",
+        default=list(DEFAULT_EXCLUDE_WINDOWS),
+        help="Local time window to exclude from stability scoring, e.g. 19:00-19:30",
+    )
+    parser.add_argument(
+        "--exclude-timezone",
+        default=DEFAULT_EXCLUDE_TIMEZONE,
+        help="Timezone used to interpret excluded windows",
+    )
+    parser.add_argument(
         "--min-connect-success-rate",
         type=float,
         default=DEFAULT_MIN_CONNECT_SUCCESS_RATE,
@@ -335,8 +439,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--max-refresh-latency-median-ms",
         type=float,
-        default=DEFAULT_MAX_REFRESH_LATENCY_MEDIAN_MS,
-        help="Threshold for overall refresh latency median",
+        default=None,
+        help="Optional threshold for overall refresh latency median; omit to ignore this metric",
     )
     return parser
 
@@ -345,14 +449,22 @@ def run_report(args: argparse.Namespace) -> int:
     input_dir = Path(args.input_dir).resolve()
     output_root = Path(args.output_root).resolve()
     reports = load_recent_reports(input_dir, days=args.days)
-    summary = aggregate_reports(
+    included_reports, excluded_reports = split_excluded_reports(
         reports,
+        exclude_windows=list(args.exclude_window or []),
+        exclude_timezone=str(args.exclude_timezone),
+    )
+    summary = aggregate_reports(
+        included_reports,
         days=args.days,
         min_connect_success_rate=args.min_connect_success_rate,
         min_in_session_fresh_rate=args.min_in_session_fresh_rate,
         max_refresh_latency_median_ms=args.max_refresh_latency_median_ms,
+        exclude_windows=list(args.exclude_window or []),
+        exclude_timezone=str(args.exclude_timezone),
+        excluded_reports=excluded_reports,
     )
-    bundle_dir, archive_path = export_bundle(summary, reports=reports, output_root=output_root)
+    bundle_dir, archive_path = export_bundle(summary, reports=included_reports, output_root=output_root)
 
     print(f"bundle_dir={bundle_dir}")
     print(f"archive={archive_path}")
@@ -360,6 +472,7 @@ def run_report(args: argparse.Namespace) -> int:
     print(f"report_md={bundle_dir / 'REPORT.md'}")
     print(f"is_stable={summary['is_stable']}")
     print(f"report_count={summary['report_count']}")
+    print(f"excluded_report_count={summary.get('excluded_report_count', 0)}")
     if summary["overall"]["connect_success_rate"] is not None:
         print(f"connect_success_rate={summary['overall']['connect_success_rate']:.2%}")
     return 0 if summary["is_stable"] else 1

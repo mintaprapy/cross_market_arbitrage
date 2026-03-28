@@ -288,6 +288,19 @@ python3 -m cross_market_monitor.tools.tqsdk_connectivity_check \
 - `--connect-timeout-sec 30`
   - 放宽单次连接超时
 
+如果要导出线上 `TqSdk` 最近一周是否运行稳定，可以直接运行：
+
+```bash
+python3 -m cross_market_monitor.tools.tqsdk_weekly_report --days 7
+```
+
+这个脚本会：
+
+- 读取 `data/tqsdk_connectivity/` 下最近 7 天的 `tqsdk_connectivity_*.json`
+- 生成一个带 `summary.json`、`REPORT.md` 和原始 JSON 副本的导出目录
+- 同时生成一个 `.tar.gz` 归档，方便从服务器下载
+- 在控制台直接打印 `is_stable`、`connect_success_rate` 和导出文件路径
+
 ## 告警阈值与通知
 
 告警阈值统一放在 `config/alert_thresholds.yaml`，每个交易组都可以单独配置：

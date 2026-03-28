@@ -58,6 +58,10 @@ class ReplayAnalyzerTests(unittest.TestCase):
             report = analyzer.analyze("AU_XAU", limit=100)
 
             self.assertEqual(report["sample_count"], 4)
+            self.assertAlmostEqual(report["spread_pct_mean"], 0.0175)
+            self.assertAlmostEqual(report["spread_pct_std"], 0.010307764064044151)
+            self.assertAlmostEqual(report["spread_pct_median"], 0.0175)
+            self.assertAlmostEqual(report["latest_spread_pct_percentile"], 0.125)
             self.assertEqual(report["spread_pct_breach_count"], 2)
             self.assertEqual(report["zscore_breach_count"], 2)
             self.assertEqual(report["convergence_count"], 2)

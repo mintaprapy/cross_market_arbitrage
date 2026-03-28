@@ -1538,12 +1538,11 @@
         <tr id="${buildReplayRowId(cardGroup.card_key)}">
           <td>${escapeHtml(cardGroup.display_name || displayNameForGroup(cardGroup.card_key || item.group_name))}</td>
           <td>${report.sample_count}</td>
-          <td>${formatNumber(report.spread_mean, 4)}</td>
-          <td>${formatNumber(report.hedge_ratio_ols, 4)}</td>
+          <td>${formatPct(report.spread_pct_mean)}</td>
+          <td>${formatPct(report.spread_pct_std)}</td>
+          <td>${formatPct(report.spread_pct_median)}</td>
+          <td>${formatPct(report.latest_spread_pct_percentile)}</td>
           <td>${formatPct(report.realized_daily_vol_pct)}</td>
-          <td>${formatNumber(report.average_round_trip_cost, 4)}</td>
-          <td>${formatNumber(report.average_net_edge_after_cost, 4)}</td>
-          <td>价差=${report.spread_pct_breach_count} / Z=${report.zscore_breach_count}</td>
         </tr>
       `;
     }
@@ -1552,7 +1551,7 @@
       return `
         <tr id="${buildReplayRowId(cardGroup.card_key)}">
           <td>${escapeHtml(cardGroup.display_name || displayNameForGroup(cardGroup.card_key || cardGroup.selected_item.group_name))}</td>
-          <td colspan="7" class="muted">正在加载回放统计...</td>
+          <td colspan="6" class="muted">正在加载回放统计...</td>
         </tr>
       `;
     }

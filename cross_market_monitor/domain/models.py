@@ -378,8 +378,11 @@ class ReplayReport(BaseModel):
     spread_min: float | None = None
     spread_max: float | None = None
     spread_pct_mean: float | None = None
+    spread_pct_std: float | None = None
+    spread_pct_median: float | None = None
     spread_pct_min: float | None = None
     spread_pct_max: float | None = None
+    latest_spread_pct_percentile: float | None = None
     max_abs_zscore: float | None = None
     spread_pct_breach_count: int = 0
     zscore_breach_count: int = 0

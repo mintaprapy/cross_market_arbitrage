@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from math import sqrt
-from statistics import mean, pstdev
+from statistics import mean, median, pstdev
 
 from cross_market_monitor.domain.models import PairConfig, ReplayHighlight, ReplayReport, ReplaySignalEvent
 from cross_market_monitor.infrastructure.repository import SQLiteRepository
@@ -110,8 +110,11 @@ class ReplayAnalyzer:
             spread_min=min(spreads) if spreads else None,
             spread_max=max(spreads) if spreads else None,
             spread_pct_mean=_safe_mean(spread_pcts),
+            spread_pct_std=_safe_std(spread_pcts),
+            spread_pct_median=median(spread_pcts) if spread_pcts else None,
             spread_pct_min=min(spread_pcts) if spread_pcts else None,
             spread_pct_max=max(spread_pcts) if spread_pcts else None,
+            latest_spread_pct_percentile=_percentile_rank(spread_pcts, rows[-1]["spread_pct"]),
             max_abs_zscore=max((abs(value) for value in zscores), default=None),
             spread_pct_breach_count=sum(
                 1 for value in spread_pcts if _value_breaches_thresholds(
@@ -276,6 +279,14 @@ def _safe_std(values: list[float]) -> float | None:
     if len(values) < 2:
         return None
     return pstdev(values)
+
+
+def _percentile_rank(values: list[float], current: float | None) -> float | None:
+    if not values or current is None:
+        return None
+    less_than = sum(1 for value in values if value < current)
+    equal_to = sum(1 for value in values if value == current)
+    return (less_than + 0.5 * equal_to) / len(values)
 
 
 def _parse_iso(value: str) -> datetime:

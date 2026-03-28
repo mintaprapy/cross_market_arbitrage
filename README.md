@@ -116,7 +116,8 @@ sudo systemctl reload nginx
 - 国内历史：TqSdk 主连
 - 海外：Binance Futures、OKX Swap
 - 备用源：Hyperliquid、CME NYMEX 参考源
-- 汇率：Sina FX `fx_susdcny`，Frankfurter 备用
+- 服务器默认汇率：Frankfurter
+- 本地 `macmini` 脚本默认汇率：Sina FX `fx_susdcny`，Frankfurter 备用
 
 ## 已实现能力
 
@@ -131,9 +132,10 @@ sudo systemctl reload nginx
 - Binance / OKX 同源海外历史回补
 - SQLite 落库：原始行情、汇率、快照、告警、通知投递
 - CSV / Parquet 导出
-- 回放分析：对冲回归 beta、波动率目标缩放、手续费/滑点/资金费率成本模型
+- 回放分析：价差百分比均值、标准差、中位数、当前分位数、日波动率
 - CLI、FastAPI API、Web Dashboard
 - 通知推送：`console`、`webhook`、`feishu`、`wecom`、`telegram`
+- Dashboard 内置 `Z-Score` 右侧概率展示和常见分布参考弹层
 
 ## 项目结构
 
@@ -214,6 +216,12 @@ cp config/local.example.yaml config/local.yaml
 python3 -m cross_market_monitor.main run-once
 ```
 
+如需在单次轮询前同时执行启动历史回补：
+
+```bash
+python3 -m cross_market_monitor.main run-once --with-startup-history
+```
+
 连续控制台输出：
 
 ```bash
@@ -237,6 +245,24 @@ python3 -m cross_market_monitor.main run-worker
 ```bash
 python3 -m cross_market_monitor.main run-api
 ```
+
+本地 `macmini` 脚本：
+
+```bash
+./scripts/start_macmini.sh
+./scripts/start_macmini_local.sh
+./scripts/stop_macmini.sh
+```
+
+说明：
+
+- `start_macmini.sh`
+  - 先 `git pull` 并更新依赖，再用 `config/monitor.macmini.yaml` 启动本地网页
+- `start_macmini_local.sh`
+  - 不做 `git pull`，直接用当前本地代码启动
+- `stop_macmini.sh`
+  - 停止本地网页进程并释放 `6080` 端口
+- 这三个脚本默认都走本地 `macmini` 配置，也就是 `Sina` 国内实时和 `Sina FX`
 
 如果要启用 `TqSdk` 启动回补和历史回补，直接在 `config/local.yaml` 里填写：
 
@@ -275,6 +301,20 @@ python3 -m cross_market_monitor.tools.tqsdk_connectivity_check \
 - `--connect-timeout-sec 30`
   - 放宽单次连接超时
 
+如果要在服务器上持续运行 `TqSdk` 实时连通性测试，可以直接后台启动：
+
+```bash
+cd /srv/cross_market_arbitrage && mkdir -p /tmp/cross_market_monitor && log_file="/tmp/cross_market_monitor/tqsdk_connectivity_loop_$(TZ=Asia/Hong_Kong date +%Y%m%d_%H%M%S).log" && nohup bash -lc 'cd /srv/cross_market_arbitrage || exit 1; source .venv/bin/activate || exit 1; while true; do echo "=== $(TZ=Asia/Hong_Kong date "+%F %T %Z") start ==="; python -m cross_market_monitor.tools.tqsdk_connectivity_check --config config/monitor.yaml --duration-sec 3600 --interval-sec 5 --connect-attempts 5 --connect-timeout-sec 30; rc=$?; echo "=== $(TZ=Asia/Hong_Kong date "+%F %T %Z") end rc=$rc ==="; sleep 10; done' > "$log_file" 2>&1 < /dev/null & echo "LOG=$log_file"
+```
+
+常用查看命令：
+
+```bash
+pgrep -af tqsdk_connectivity_check
+tail -f /tmp/cross_market_monitor/tqsdk_connectivity_loop_*.log
+latest=$(ls -t data/tqsdk_connectivity/tqsdk_connectivity_*.json | head -1) && echo "$latest" && cat "$latest"
+```
+
 如果要导出线上 `TqSdk` 最近一周是否运行稳定，可以直接运行：
 
 ```bash
@@ -295,6 +335,42 @@ python3 -m cross_market_monitor.tools.tqsdk_weekly_report \
   --days 7 \
   --max-refresh-latency-median-ms 1000
 ```
+
+如果要持续监测 SQLite 数据库体积和增长速度，可以直接运行：
+
+```bash
+cd /srv/cross_market_arbitrage
+bash scripts/watch_db_growth.sh start
+```
+
+说明：
+
+- 在 Ubuntu 服务器上建议显式用 `bash` 启动
+  - 脚本默认 shebang 是 `zsh`，部分服务器没有 `/bin/zsh`
+- 默认每 `900` 秒采样一次，也就是 `15` 分钟
+- 默认配置文件使用 `config/monitor.yaml`
+
+如需调整采样间隔，例如改成每 `300` 秒一次：
+
+```bash
+cd /srv/cross_market_arbitrage
+DB_GROWTH_INTERVAL_SEC=300 bash scripts/watch_db_growth.sh start
+```
+
+常用命令：
+
+```bash
+bash scripts/watch_db_growth.sh status
+bash scripts/watch_db_growth.sh stop
+tail -f logs/db_growth/watch.log
+```
+
+输出文件默认在：
+
+- `logs/db_growth/watch.log`
+- `logs/db_growth/samples.csv`
+- `logs/db_growth/size_latest.txt`
+- `logs/db_growth/watch.pid`
 
 ## 告警阈值与通知
 
@@ -588,6 +664,14 @@ ExecStart=/srv/cross_market_arbitrage/.venv/bin/cross-market-monitor --config /s
 python3 -m cross_market_monitor.main export-csv --dataset snapshots --group-name AU_XAU
 ```
 
+可导出的 `dataset`：
+
+- `snapshots`
+- `alerts`
+- `raw_quotes`
+- `fx_rates`
+- `notification_deliveries`
+
 导出 Parquet：
 
 ```bash
@@ -616,6 +700,12 @@ python3 -m cross_market_monitor.main replay --group-name AU_XAU --limit 500 --fo
 
 ```bash
 python3 -m cross_market_monitor.main backfill-overseas --group-name AU_XAU --interval 60m --range-key 30d
+```
+
+国内历史回补：
+
+```bash
+python3 -m cross_market_monitor.main backfill-domestic --group-name AU_XAU --interval 60m --range-key 30d
 ```
 
 ## 存储

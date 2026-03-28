@@ -32,6 +32,9 @@ class SnapshotBuilder:
         self.alert_service = alert_service
 
     async def build_snapshot(self, pair: PairConfig, fx_context) -> SpreadSnapshot:
+        now_local = utc_now().astimezone(self.context.local_tz)
+        domestic_session_constrained = bool(pair.trading_sessions_local)
+        domestic_session_open = self.is_domestic_session_open(pair, now_local) if domestic_session_constrained else True
         domestic_quote, domestic_quotes, domestic_errors, domestic_detail = await self.quote_router.fetch_leg_quote(
             pair.group_name,
             "domestic",
@@ -132,13 +135,20 @@ class SnapshotBuilder:
         snapshot_ts = utc_now()
         window = self.context.windows[pair.group_name]
         rolling_mean = rolling_std = zscore = delta_spread = None
-        if spread_pct is not None:
+        if spread_pct is not None and domestic_session_open:
             rolling_mean, rolling_std, zscore, delta_spread = window.summary(
                 spread_pct,
                 current_ts=snapshot_ts,
             )
             if status == "ok":
                 window.append(spread_pct, ts=snapshot_ts)
+        elif domestic_session_constrained and not domestic_session_open:
+            previous_snapshot = self.context.latest_snapshots.get(pair.group_name)
+            if previous_snapshot is not None:
+                rolling_mean = previous_snapshot.rolling_mean
+                rolling_std = previous_snapshot.rolling_std
+                zscore = previous_snapshot.zscore
+                delta_spread = previous_snapshot.delta_spread
 
         snapshot = SpreadSnapshot(
             ts=snapshot_ts,
@@ -217,12 +227,7 @@ class SnapshotBuilder:
             return domestic_quote, domestic_quotes
 
         now_local = utc_now().astimezone(self.context.local_tz)
-        if is_within_trading_sessions(
-            now_local,
-            pair.trading_sessions_local,
-            non_trading_dates=self.context.config.app.domestic_non_trading_dates_local,
-            weekends_closed=self.context.config.app.domestic_weekends_closed,
-        ):
+        if self.is_domestic_session_open(pair, now_local):
             return domestic_quote, domestic_quotes
 
         session_end_local = latest_session_end_before(
@@ -243,6 +248,14 @@ class SnapshotBuilder:
         if frozen_quote is None:
             return domestic_quote, domestic_quotes
         return frozen_quote, [frozen_quote]
+
+    def is_domestic_session_open(self, pair: PairConfig, now_local) -> bool:
+        return is_within_trading_sessions(
+            now_local,
+            pair.trading_sessions_local,
+            non_trading_dates=self.context.config.app.domestic_non_trading_dates_local,
+            weekends_closed=self.context.config.app.domestic_weekends_closed,
+        )
 
     def fx_stale_seconds(self, pair: PairConfig) -> int:
         return max(

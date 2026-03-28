@@ -2625,6 +2625,118 @@ class MonitorServiceTests(unittest.TestCase):
             self.assertEqual(snapshot.domestic_last_raw, 100.0)
             self.assertEqual(snapshot.fx_rate, 7.0)
 
+    def test_freezes_zscore_outside_domestic_trading_session(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repository = SQLiteRepository(f"{tmp_dir}/monitor.db")
+            config = MonitorConfig.model_validate(
+                {
+                    "app": {
+                        "name": "test",
+                        "timezone": "Asia/Shanghai",
+                        "fx_source": "fx",
+                        "sqlite_path": f"{tmp_dir}/monitor.db",
+                    },
+                    "sources": {
+                        "domestic": {"kind": "mock_quote", "base_url": "http://local"},
+                        "overseas": {"kind": "mock_quote", "base_url": "http://local"},
+                        "fx": {"kind": "mock_fx", "base_url": "http://local"},
+                    },
+                    "pairs": [
+                        {
+                            "group_name": "AU_XAU_TEST",
+                            "domestic_source": "domestic",
+                            "domestic_symbol": "nf_AU0",
+                            "domestic_label": "AU Main",
+                            "overseas_source": "overseas",
+                            "overseas_symbol": "XAU",
+                            "overseas_label": "XAU",
+                            "formula": "gold",
+                            "domestic_unit": "CNY_PER_GRAM",
+                            "target_unit": "USD_PER_OUNCE",
+                            "trading_sessions_local": ["09:00-10:00", "13:30-15:00", "21:00-02:30"],
+                            "thresholds": {
+                                "stale_seconds": 7200,
+                                "max_skew_seconds": 7200,
+                            },
+                        }
+                    ],
+                }
+            )
+            close_ts = datetime(2026, 3, 20, 7, 0, tzinfo=UTC)
+            now_ts = datetime(2026, 3, 20, 10, 30, tzinfo=UTC)
+            repository.insert_raw_quote(
+                "AU_XAU_TEST",
+                "domestic",
+                MarketQuote(
+                    source_name="domestic",
+                    symbol="nf_AU0",
+                    label="AU Main",
+                    ts=close_ts,
+                    last=100.0,
+                    bid=99.9,
+                    ask=100.1,
+                    raw_payload="day-close",
+                ),
+            )
+            repository.insert_fx_rate(
+                FXQuote(
+                    source_name="fx",
+                    pair="USD/CNY",
+                    ts=close_ts - timedelta(minutes=1),
+                    rate=7.0,
+                    raw_payload="close-fx",
+                )
+            )
+            repository.insert_snapshot(
+                SpreadSnapshot(
+                    ts=close_ts,
+                    group_name="AU_XAU_TEST",
+                    domestic_symbol="nf_AU0",
+                    overseas_symbol="XAU",
+                    fx_source="fx",
+                    fx_rate=7.0,
+                    formula="gold",
+                    formula_version="v1",
+                    tax_mode="gross",
+                    target_unit="USD_PER_OUNCE",
+                    status="ok",
+                    domestic_source="domestic",
+                    overseas_source="overseas",
+                    domestic_label="AU Main",
+                    overseas_label="XAU",
+                    normalized_last=444.33538285714287,
+                    overseas_last=440.0,
+                    spread=4.33538285714287,
+                    spread_pct=0.009802460614329452,
+                    rolling_mean=0.01,
+                    rolling_std=0.002,
+                    zscore=1.5,
+                    delta_spread=0.0004,
+                    route_detail={},
+                    errors=[],
+                ),
+                timezone_name="Asia/Shanghai",
+            )
+
+            service = MonitorService(config, repository)
+            service.adapters["domestic"] = FixedTimestampQuoteAdapter("domestic", now_ts, 101.0, 100.9, 101.1)
+            service.adapters["overseas"] = FixedTimestampQuoteAdapter("overseas", now_ts, 460.0, 459.0, 461.0)
+            service.adapters["fx"] = FixedTimestampFxAdapter("fx", now_ts, 7.2)
+
+            with mock.patch("cross_market_monitor.application.common.utc_now", return_value=now_ts):
+                with mock.patch("cross_market_monitor.application.monitor.snapshot_builder.utc_now", return_value=now_ts):
+                    asyncio.run(service.poll_once())
+
+            snapshot = service.latest_snapshots["AU_XAU_TEST"]
+            self.assertEqual(snapshot.domestic_last_raw, 100.0)
+            self.assertEqual(snapshot.fx_rate, 7.0)
+            self.assertEqual(snapshot.overseas_last, 460.0)
+            self.assertNotEqual(snapshot.spread_pct, 0.009802460614329452)
+            self.assertEqual(snapshot.rolling_mean, 0.01)
+            self.assertEqual(snapshot.rolling_std, 0.002)
+            self.assertEqual(snapshot.zscore, 1.5)
+            self.assertEqual(snapshot.delta_spread, 0.0004)
+
     def test_freezes_fx_to_domestic_timestamp_when_domestic_quote_is_stale(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             repository = SQLiteRepository(f"{tmp_dir}/monitor.db")

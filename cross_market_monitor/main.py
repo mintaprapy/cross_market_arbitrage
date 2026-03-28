@@ -2,9 +2,12 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+from copy import deepcopy
+from datetime import datetime
 import json
 import logging
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from cross_market_monitor.infrastructure.config_loader import load_config
 from cross_market_monitor.infrastructure.repository import SQLiteRepository
@@ -14,6 +17,53 @@ ONE_SHOT_APP_OVERRIDES = {
     "startup_history_backfill_enabled": False,
     "tqsdk_startup_backfill_enabled": False,
 }
+DEFAULT_LOG_TIMEZONE = "Asia/Shanghai"
+
+
+class TimezoneFormatter(logging.Formatter):
+    def __init__(self, *args, timezone_name: str = DEFAULT_LOG_TIMEZONE, **kwargs):
+        kwargs.pop("use_colors", None)
+        super().__init__(*args, **kwargs)
+        self._timezone_name = timezone_name
+        self._timezone = ZoneInfo(timezone_name)
+
+    def formatTime(self, record: logging.LogRecord, datefmt: str | None = None) -> str:
+        current = datetime.fromtimestamp(record.created, tz=self._timezone)
+        if datefmt:
+            return current.strftime(datefmt)
+        return current.isoformat(timespec="seconds")
+
+
+def configure_logging(config_path: str) -> str:
+    timezone_name = DEFAULT_LOG_TIMEZONE
+    try:
+        timezone_name = load_config(config_path).app.timezone or DEFAULT_LOG_TIMEZONE
+    except Exception:
+        timezone_name = DEFAULT_LOG_TIMEZONE
+    formatter = TimezoneFormatter(
+        "%(asctime)s %(levelname)s [%(name)s] %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+        timezone_name=timezone_name,
+    )
+    logging.basicConfig(level=logging.INFO, handlers=[logging.StreamHandler()], force=True)
+    root = logging.getLogger()
+    for handler in root.handlers:
+        handler.setFormatter(formatter)
+    return timezone_name
+
+
+def build_uvicorn_log_config(timezone_name: str) -> dict:
+    from uvicorn.config import LOGGING_CONFIG
+
+    log_config = deepcopy(LOGGING_CONFIG)
+    for formatter_name in ("default", "access"):
+        formatter = log_config["formatters"].get(formatter_name)
+        if not formatter:
+            continue
+        formatter["()"] = TimezoneFormatter
+        formatter["timezone_name"] = timezone_name
+        formatter["datefmt"] = "%Y-%m-%d %H:%M:%S"
+    return log_config
 
 
 def load_runtime(config_path: str, *, app_overrides: dict | None = None):
@@ -325,11 +375,7 @@ def main() -> None:
     overseas_backfill_parser.add_argument("--format", choices=["text", "json"], default="text")
 
     args = parser.parse_args()
-
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
-    )
+    log_timezone = configure_logging(args.config)
 
     if args.command == "console":
         _run_async(run_console(args.config, args.cycles))
@@ -420,7 +466,13 @@ def main() -> None:
     app = create_app(service, run_runtime=args.command != "run-api")
     host = args.host or service.config.app.bind_host
     port = args.port or service.config.app.bind_port
-    uvicorn.run(app, host=host, port=port, log_level="info")
+    uvicorn.run(
+        app,
+        host=host,
+        port=port,
+        log_level="info",
+        log_config=build_uvicorn_log_config(log_timezone),
+    )
 
 
 def _run_async(coro) -> None:

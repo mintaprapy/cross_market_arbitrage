@@ -172,6 +172,7 @@
     };
 
     const CARD_DISPLAY_ORDER = ["AU_XAU", "AG_XAG", "CU_COPPER", "AL_ALUMINIUM", "BC_COPPER", "SC_CL", "B_SOYBEAN", "CF_COTTON", "SR_SUGAR"];
+    const HIDDEN_CARD_KEYS = new Set(["AL_ALUMINIUM", "B_SOYBEAN", "CF_COTTON", "SR_SUGAR"]);
 
     const CARD_SELECTION_STORAGE_KEY = "cross-market-card-selection-v5";
     const HISTORY_RANGE_STORAGE_KEY = "cross-market-history-range-v1";
@@ -920,10 +921,12 @@
       const selections = loadCardSelections();
       const assigned = new Set();
       const groups = [];
+      const visibleItems = (items || []).filter((item) => !HIDDEN_CARD_KEYS.has(cardKeyForGroup(item.group_name)));
 
       Object.entries(CARD_VARIANT_GROUPS).forEach(([cardKey, config]) => {
+        if (HIDDEN_CARD_KEYS.has(cardKey)) return;
         const variants = config.variants
-          .map((groupName) => items.find((item) => item.group_name === groupName))
+          .map((groupName) => visibleItems.find((item) => item.group_name === groupName))
           .filter(Boolean);
         if (!variants.length) return;
         variants.forEach((item) => assigned.add(item.group_name));
@@ -937,7 +940,7 @@
         });
       });
 
-      items.forEach((item) => {
+      visibleItems.forEach((item) => {
         if (assigned.has(item.group_name)) return;
         groups.push({
           card_key: item.group_name,
@@ -1531,7 +1534,9 @@
               cardGroup.selected_item.group_name,
               cardGroup.selected_item.status,
             ))
-          : (snapshot.health.pairs || []).map((item) => buildWaitingCard(item.group_name, item.group_name, item.status));
+          : (snapshot.health.pairs || [])
+            .filter((item) => !HIDDEN_CARD_KEYS.has(cardKeyForGroup(item.group_name)))
+            .map((item) => buildWaitingCard(item.group_name, item.group_name, item.status));
         document.getElementById("cards").innerHTML = waitingCards.length
           ? waitingCards.join("")
           : `<article class="card"><div class="muted">等待第一轮轮询完成后展示卡片。</div></article>`;

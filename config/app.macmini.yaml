@@ -6,7 +6,7 @@ app:
   fx_poll_interval_sec: 3600
   history_limit: 1000
   rolling_window_size: 120
-  zscore_window_days: 0
+  zscore_window_days: 180
   http_timeout_sec: 8
   sqlite_path: data/monitor.db
   fx_source: sina_fx

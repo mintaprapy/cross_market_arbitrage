@@ -7,6 +7,7 @@ from datetime import datetime
 from cross_market_monitor.application.common import data_quality_group_name
 from cross_market_monitor.application.common import is_within_trading_sessions
 from cross_market_monitor.application.common import display_group_name
+from cross_market_monitor.application.common import age_seconds
 from cross_market_monitor.application.context import ServiceContext
 from cross_market_monitor.application.history.history_service import HistoryService
 from cross_market_monitor.domain.models import AlertEvent, NotificationDelivery, PairConfig, SpreadSnapshot
@@ -57,7 +58,8 @@ class AlertService:
                 )
             )
 
-        if snapshot.fx_age_sec is not None and snapshot.fx_age_sec > self.context.config.app.fx_max_age_sec:
+        live_fx_age_sec = self.live_fx_age_sec(snapshot)
+        if live_fx_age_sec is not None and live_fx_age_sec > self.context.config.app.fx_max_age_sec:
             alerts.append(
                 self.make_alert(
                     now,
@@ -66,17 +68,18 @@ class AlertService:
                     "warning",
                     (
                         f"USD/CNY FX data is stale "
-                        f"({snapshot.fx_age_sec / 3600:.1f}h old)"
+                        f"({live_fx_age_sec / 3600:.1f}h old)"
                     ),
                     {
-                        "fx_age_sec": snapshot.fx_age_sec,
-                        "fx_rate": snapshot.fx_rate,
-                        "fx_source": snapshot.fx_source,
+                        "fx_age_sec": live_fx_age_sec,
+                        "effective_fx_age_sec": snapshot.fx_age_sec,
+                        "fx_rate": self.context.latest_fx_quote.rate if self.context.latest_fx_quote is not None else snapshot.fx_rate,
+                        "fx_source": self.context.latest_fx_quote.source_name if self.context.latest_fx_quote is not None else snapshot.fx_source,
                     },
                 )
             )
 
-        if snapshot.fx_rate is None:
+        if snapshot.fx_rate is None and self.context.latest_fx_quote is None:
             alerts.append(
                 self.make_alert(
                     now,
@@ -343,6 +346,15 @@ class AlertService:
         if snapshot.fx_age_sec is not None and snapshot.fx_age_sec > self.context.config.app.fx_max_age_sec:
             return not non_fx_errors
         return False
+
+    def live_fx_age_sec(self, snapshot: SpreadSnapshot) -> float | None:
+        if self.context.latest_fx_last_live_at is not None:
+            return max((snapshot.ts - self.context.latest_fx_last_live_at).total_seconds(), 0.0)
+        if self.context.latest_fx_quote is not None:
+            return max((snapshot.ts - self.context.latest_fx_quote.ts).total_seconds(), 0.0)
+        if snapshot.fx_age_sec is not None:
+            return snapshot.fx_age_sec
+        return None
 
     def issue_has_reached_delay(
         self,

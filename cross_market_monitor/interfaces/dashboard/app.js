@@ -80,9 +80,15 @@
       return Math.max(0, Math.min(1, 1 - central));
     }
 
-    function formatProbabilityLabel(value) {
-      const central = zScoreCentralProbability(value);
-      return central === null ? "±|Z| 概率 --" : `±|Z| 概率 ${formatPct(central)}`;
+    function zScoreRightTailProbability(value) {
+      const numeric = toFiniteNumber(value);
+      if (numeric === null) return null;
+      return Math.max(0, Math.min(1, 1 - normalCdf(numeric)));
+    }
+
+    function formatRightTailProbabilityLabel(value) {
+      const probability = zScoreRightTailProbability(value);
+      return probability === null ? "| --" : `| ${formatPct(probability)}`;
     }
 
     function formatTableNumber(value, digits = 2) {
@@ -1485,8 +1491,10 @@
             </div>
             <div class="metric">
               <button type="button" class="metric-trigger" onclick="openZScoreReference('${escapeHtml(cardGroup.card_key)}')">Z-Score</button>
-              <strong data-card-field="zscore">${formatNumber(item.zscore, 2)}</strong>
-              <span class="metric-note" data-card-field="zscore_probability">${escapeHtml(formatProbabilityLabel(item.zscore))}</span>
+              <div class="metric-inline-row">
+                <strong data-card-field="zscore">${formatNumber(item.zscore, 2)}</strong>
+                <span class="metric-inline-note" data-card-field="zscore_probability">${escapeHtml(formatRightTailProbabilityLabel(item.zscore))}</span>
+              </div>
             </div>
             <div class="metric">
               <label>汇率跳变</label>
@@ -1769,7 +1777,7 @@
         setCardField(card, "spread", formatNumber(item.spread, 4));
         setCardField(card, "spread_pct", formatPct(item.spread_pct));
         setCardField(card, "zscore", formatNumber(item.zscore, 2));
-        setCardField(card, "zscore_probability", formatProbabilityLabel(item.zscore));
+        setCardField(card, "zscore_probability", formatRightTailProbabilityLabel(item.zscore));
         setCardField(card, "fx_jump_pct", formatPct(item.fx_jump_pct));
         setCardField(card, "signal_state", signalStateLabel(item.signal_state));
         setCardField(card, "normalized_last", formatNumber(item.normalized_last, 4));

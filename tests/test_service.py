@@ -2261,6 +2261,68 @@ class MonitorServiceTests(unittest.TestCase):
             self.assertEqual(alerts[0].category, "fx")
             self.assertEqual(alerts[0].group_name, "FX")
 
+    def test_old_frozen_fx_does_not_emit_global_alert_when_live_fx_is_recent(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repository = SQLiteRepository(f"{tmp_dir}/monitor.db")
+            service = MonitorService(
+                MonitorConfig.model_validate(
+                    {
+                        "app": {
+                            "name": "test",
+                            "fx_source": "fx",
+                            "sqlite_path": f"{tmp_dir}/monitor.db",
+                        },
+                        "sources": {
+                            "domestic": {"kind": "mock_quote", "base_url": "http://local"},
+                            "overseas": {"kind": "mock_quote", "base_url": "http://local"},
+                            "fx": {"kind": "mock_fx", "base_url": "http://local"},
+                        },
+                        "pairs": [
+                            {
+                                "group_name": "AU_XAU_TEST",
+                                "domestic_source": "domestic",
+                                "domestic_symbol": "nf_AU0",
+                                "domestic_label": "AU Main",
+                                "overseas_source": "overseas",
+                                "overseas_symbol": "XAU",
+                                "overseas_label": "XAU",
+                                "formula": "gold",
+                                "domestic_unit": "CNY_PER_GRAM",
+                                "target_unit": "USD_PER_OUNCE",
+                            }
+                        ],
+                    }
+                ),
+                repository,
+            )
+            pair = service.config.pairs[0]
+            snapshot_ts = datetime(2026, 3, 16, 10, 0, tzinfo=UTC)
+            service.context.latest_fx_quote = FXQuote(
+                source_name="fx",
+                pair="USD/CNY",
+                ts=snapshot_ts - timedelta(minutes=10),
+                rate=6.9,
+                raw_payload="live-fx",
+            )
+            service.context.latest_fx_last_live_at = snapshot_ts - timedelta(minutes=10)
+            snapshot = SpreadSnapshot(
+                ts=snapshot_ts,
+                group_name="AU_XAU_TEST",
+                domestic_symbol="nf_AU0",
+                overseas_symbol="XAU",
+                fx_source="fx",
+                fx_rate=6.9,
+                formula="gold",
+                formula_version="v1",
+                tax_mode="gross",
+                target_unit="USD_PER_OUNCE",
+                status="ok",
+                fx_age_sec=35 * 3600,
+            )
+
+            alerts = service.alert_service.evaluate_alerts(pair, snapshot)
+            self.assertFalse(any(alert.category == "fx" for alert in alerts))
+
     def test_fx_unavailable_emits_global_fx_alert_not_pair_data_quality(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             repository = SQLiteRepository(f"{tmp_dir}/monitor.db")

@@ -137,12 +137,17 @@
       font-family: "SF Mono", Menlo, monospace;
       font-size: 18px;
     }
-    .metric-note {
-      display: block;
-      margin-top: 6px;
+    .metric-inline-row {
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .metric-inline-note {
       color: var(--muted);
-      font-size: 12px;
-      line-height: 1.45;
+      font-family: "SF Mono", Menlo, monospace;
+      font-size: 13px;
+      line-height: 1.4;
     }
     .metric-trigger {
       display: inline-flex;

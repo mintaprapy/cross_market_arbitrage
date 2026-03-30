@@ -1735,11 +1735,7 @@
     }
 
     async function load() {
-      const [snapshot, alerts, deliveries] = await Promise.all([
-        fetchJson("/api/snapshot-summary"),
-        fetchJson("/api/alerts?limit=12"),
-        fetchJson("/api/notification-deliveries?limit=12"),
-      ]);
+      const snapshot = await fetchJson("/api/snapshot-summary");
 
       document.getElementById("meta").innerHTML = `
         <span class="pill">最近刷新：${escapeHtml(formatDateTime(snapshot.as_of))}</span>
@@ -1779,27 +1775,6 @@
           <td>${escapeHtml(item.last_symbol || "--")}</td>
           <td>${formatNumber(item.last_latency_ms, 1)} ms</td>
           <td>${escapeHtml(item.last_error || "--")}</td>
-        </tr>
-      `).join("");
-
-      document.getElementById("deliveries").innerHTML = deliveries.map((item) => `
-        <tr>
-          <td>${escapeHtml(formatDateTime(item.ts_local || item.ts || "--"))}</td>
-          <td>${escapeHtml(item.notifier_name)}</td>
-          <td>${escapeHtml(displayNameForGroup(item.group_name))}</td>
-          <td>${escapeHtml(severityLabel(item.severity))}</td>
-          <td>${item.success ? "成功" : "失败"}</td>
-          <td>${escapeHtml(item.response_message)}</td>
-        </tr>
-      `).join("");
-
-      document.getElementById("alerts").innerHTML = alerts.map((item) => `
-        <tr>
-          <td>${escapeHtml(formatDateTime(item.ts_local || item.ts || "--"))}</td>
-          <td>${escapeHtml(displayNameForGroup(item.group_name))}</td>
-          <td>${escapeHtml(alertCategoryLabel(item.category))}</td>
-          <td>${escapeHtml(severityLabel(item.severity))}</td>
-          <td>${escapeHtml(item.message)}</td>
         </tr>
       `).join("");
     }

@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>跨市场价差监控平台 | __APP_TITLE__</title>
-    <link rel="stylesheet" href="/dashboard/styles.css?v=20260328d">
+    <link rel="stylesheet" href="/dashboard/styles.css?v=20260330a">
 
 </head>
 <body>
@@ -66,75 +66,30 @@
       </table>
     </section>
 
-    <section class="two-up">
-      <section class="panel">
-        <div class="head">
-          <div class="title">
-            <strong>数据源健康</strong>
-            <span>主源与备用源的可用状态</span>
-          </div>
-        </div>
-        <table>
-          <thead>
-            <tr>
-              <th>数据源</th>
-              <th>类型</th>
-              <th>成功</th>
-              <th>失败</th>
-              <th>最近成功</th>
-              <th>最近标的</th>
-              <th>延迟</th>
-              <th>最近错误</th>
-            </tr>
-          </thead>
-          <tbody id="sources"></tbody>
-        </table>
-      </section>
-
-      <section class="panel">
-        <div class="head">
-          <div class="title">
-            <strong>通知投递</strong>
-            <span>最近的告警通知发送结果</span>
-          </div>
-        </div>
-        <table>
-          <thead>
-            <tr>
-              <th>时间</th>
-              <th>通知器</th>
-              <th>监控组</th>
-              <th>级别</th>
-              <th>结果</th>
-              <th>消息</th>
-            </tr>
-          </thead>
-          <tbody id="deliveries"></tbody>
-        </table>
-      </section>
-    </section>
-
     <section class="panel">
       <div class="head">
         <div class="title">
-          <strong>最近告警</strong>
-          <span>最新告警流与数据质量提示</span>
+          <strong>数据源健康</strong>
+          <span>主源与备用源的可用状态</span>
         </div>
       </div>
       <table>
         <thead>
           <tr>
-            <th>时间</th>
-            <th>监控组</th>
-            <th>类别</th>
-            <th>级别</th>
-            <th>消息</th>
+            <th>数据源</th>
+            <th>类型</th>
+            <th>成功</th>
+            <th>失败</th>
+            <th>最近成功</th>
+            <th>最近标的</th>
+            <th>延迟</th>
+            <th>最近错误</th>
           </tr>
         </thead>
-        <tbody id="alerts"></tbody>
+        <tbody id="sources"></tbody>
       </table>
     </section>
   </div>
-    <script src="/dashboard/app.js?v=20260328d"></script>
+    <script src="/dashboard/app.js?v=20260330a"></script>
 </body>
 </html>

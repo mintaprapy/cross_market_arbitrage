@@ -11,6 +11,7 @@ from zoneinfo import ZoneInfo
 
 from cross_market_monitor.infrastructure.config_loader import load_config
 from cross_market_monitor.infrastructure.repository import SQLiteRepository
+from uvicorn.logging import AccessFormatter, DefaultFormatter
 
 DEFAULT_CONFIG = Path(__file__).resolve().parents[1] / "config" / "monitor.yaml"
 ONE_SHOT_APP_OVERRIDES = {
@@ -20,10 +21,8 @@ ONE_SHOT_APP_OVERRIDES = {
 DEFAULT_LOG_TIMEZONE = "Asia/Shanghai"
 
 
-class TimezoneFormatter(logging.Formatter):
-    def __init__(self, *args, timezone_name: str = DEFAULT_LOG_TIMEZONE, **kwargs):
-        kwargs.pop("use_colors", None)
-        super().__init__(*args, **kwargs)
+class _TimezoneFormatterMixin:
+    def _init_timezone(self, timezone_name: str) -> None:
         self._timezone_name = timezone_name
         self._timezone = ZoneInfo(timezone_name)
 
@@ -32,6 +31,25 @@ class TimezoneFormatter(logging.Formatter):
         if datefmt:
             return current.strftime(datefmt)
         return current.isoformat(timespec="seconds")
+
+
+class TimezoneFormatter(_TimezoneFormatterMixin, logging.Formatter):
+    def __init__(self, *args, timezone_name: str = DEFAULT_LOG_TIMEZONE, **kwargs):
+        kwargs.pop("use_colors", None)
+        super().__init__(*args, **kwargs)
+        self._init_timezone(timezone_name)
+
+
+class TimezoneDefaultFormatter(_TimezoneFormatterMixin, DefaultFormatter):
+    def __init__(self, *args, timezone_name: str = DEFAULT_LOG_TIMEZONE, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._init_timezone(timezone_name)
+
+
+class TimezoneAccessFormatter(_TimezoneFormatterMixin, AccessFormatter):
+    def __init__(self, *args, timezone_name: str = DEFAULT_LOG_TIMEZONE, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._init_timezone(timezone_name)
 
 
 def configure_logging(config_path: str) -> str:
@@ -60,7 +78,9 @@ def build_uvicorn_log_config(timezone_name: str) -> dict:
         formatter = log_config["formatters"].get(formatter_name)
         if not formatter:
             continue
-        formatter["()"] = TimezoneFormatter
+        formatter["()"] = (
+            TimezoneDefaultFormatter if formatter_name == "default" else TimezoneAccessFormatter
+        )
         formatter["timezone_name"] = timezone_name
         formatter["datefmt"] = "%Y-%m-%d %H:%M:%S"
     return log_config

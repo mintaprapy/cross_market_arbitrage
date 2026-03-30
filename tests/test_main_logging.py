@@ -4,7 +4,12 @@ import logging
 import unittest
 from datetime import UTC, datetime
 
-from cross_market_monitor.main import TimezoneFormatter, build_uvicorn_log_config
+from cross_market_monitor.main import (
+    TimezoneAccessFormatter,
+    TimezoneDefaultFormatter,
+    TimezoneFormatter,
+    build_uvicorn_log_config,
+)
 
 
 class TestMainLogging(unittest.TestCase):
@@ -29,8 +34,8 @@ class TestMainLogging(unittest.TestCase):
 
     def test_uvicorn_log_config_uses_timezone_formatter(self) -> None:
         log_config = build_uvicorn_log_config("Asia/Shanghai")
-        self.assertIs(log_config["formatters"]["default"]["()"], TimezoneFormatter)
-        self.assertIs(log_config["formatters"]["access"]["()"], TimezoneFormatter)
+        self.assertIs(log_config["formatters"]["default"]["()"], TimezoneDefaultFormatter)
+        self.assertIs(log_config["formatters"]["access"]["()"], TimezoneAccessFormatter)
         self.assertEqual(log_config["formatters"]["default"]["timezone_name"], "Asia/Shanghai")
         self.assertEqual(log_config["formatters"]["access"]["timezone_name"], "Asia/Shanghai")
 

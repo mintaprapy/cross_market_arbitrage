@@ -222,6 +222,9 @@
     const CHART_VISIBILITY_STORAGE_KEY = "cross-market-chart-visibility-v1";
     const DEFAULT_HISTORY_RANGE_KEY = "24h";
     let DASHBOARD_BOOTSTRAPPED = false;
+    let ACTIVE_CARD_GROUP_NAME = null;
+    let ACTIVE_CARD_REFRESH_IN_FLIGHT = false;
+    let LAST_CARD_GROUPS = [];
     const HISTORY_RANGE_OPTIONS = [
       { key: "24h", label: "24h" },
       { key: "7d", label: "7天" },
@@ -716,10 +719,14 @@
 
     async function handleSeriesVisibilityToggle(cardKey, groupName, chartKind, seriesName) {
       toggleSeriesVisibility(cardKey, chartKind, seriesName);
+      ACTIVE_CARD_GROUP_NAME = groupName;
+      ACTIVE_CARD_REFRESH_IN_FLIGHT = true;
       try {
         await refreshCardGroup(groupName);
       } catch (error) {
         window.alert(`更新图表显示项失败：${error.message}`);
+      } finally {
+        ACTIVE_CARD_REFRESH_IN_FLIGHT = false;
       }
     }
 
@@ -1149,14 +1156,14 @@
       const item = cardGroup.selected_item;
       const domesticLabel = domesticPreference?.selected_label || item.domestic_label || item.domestic_symbol || "--";
       const overseasLabel = overseasPreference?.selected_label || item.overseas_label || item.overseas_symbol || "--";
-      const cardHref = `#${buildCardElementId(cardGroup.card_key)}`;
+      const activeClass = cardKeyForGroup(ACTIVE_CARD_GROUP_NAME || "") === cardGroup.card_key ? " active" : "";
       return `
-        <tr id="${buildInstrumentRowId(cardGroup.card_key)}">
+        <tr id="${buildInstrumentRowId(cardGroup.card_key)}" class="summary-row summary-row-clickable${activeClass}" data-card-key="${escapeHtml(cardGroup.card_key)}" onclick="handleOpenCard('${escapeHtml(item.group_name)}')">
           <td>
-            <a class="summary-link" href="${escapeHtml(cardHref)}">
+            <button type="button" class="summary-link summary-link-button">
               <strong>${escapeHtml(cardGroup.display_name || displayNameForGroup(item.group_name))}</strong>
               <span class="summary-sub">${escapeHtml(domesticLabel)} / ${escapeHtml(overseasLabel)}</span>
-            </a>
+            </button>
           </td>
           <td class="numeric-cell"><div class="summary-lines">${buildVariantValueLines(cardGroup, (variant) => formatTableNumber(variant.domestic_last_raw, domesticPriceDigits(variant)))}</div></td>
           <td class="numeric-cell"><div class="summary-lines">${buildVariantValueLines(cardGroup, (variant) => formatDomesticLotNotional(variant))}</div></td>
@@ -1180,6 +1187,32 @@
       document.getElementById("instrument-summary").innerHTML = rows.length
         ? rows.join("")
         : `<tr><td colspan="8" class="muted">等待第一轮轮询完成后展示标的概览。</td></tr>`;
+      updateInstrumentActiveRows();
+    }
+
+    function updateInstrumentActiveRows() {
+      const activeCardKey = cardKeyForGroup(ACTIVE_CARD_GROUP_NAME || "");
+      document.querySelectorAll("#instrument-summary tr[data-card-key]").forEach((row) => {
+        row.classList.toggle("active", row.dataset.cardKey === activeCardKey);
+      });
+    }
+
+    function renderCardsPlaceholder(message = "点击上方标的查看详情图表。") {
+      document.getElementById("cards").innerHTML = `
+        <article class="card detail-placeholder">
+          <div class="head">
+            <div class="title">
+              <strong>详情图表</strong>
+              <span>首屏仅加载摘要，点击上方交易对后再加载图表和详细指标。</span>
+            </div>
+          </div>
+          <div class="detail"><div>${escapeHtml(message)}</div></div>
+        </article>
+      `;
+    }
+
+    function renderReplayPlaceholder(message = "点击上方标的查看对应回放研究。") {
+      document.getElementById("replay").innerHTML = `<tr><td colspan="7" class="muted">${escapeHtml(message)}</td></tr>`;
     }
 
     function buildVariantSelector(cardGroup) {
@@ -1595,14 +1628,15 @@
         if (existingCard) {
           existingCard.outerHTML = cardMarkup;
         } else {
-          await load();
-          return;
+          document.getElementById("cards").innerHTML = cardMarkup;
         }
 
         const replayMarkup = buildReplayRowMarkup(cardGroup, payload.replay_summary);
         const existingReplayRow = document.getElementById(buildReplayRowId(cardGroup.card_key));
         if (existingReplayRow) {
           existingReplayRow.outerHTML = replayMarkup;
+        } else {
+          document.getElementById("replay").innerHTML = replayMarkup;
         }
 
         const instrumentRowMarkup = buildInstrumentRow(
@@ -1621,16 +1655,60 @@
       }
     }
 
+    async function handleOpenCard(groupName) {
+      ACTIVE_CARD_GROUP_NAME = groupName;
+      const summary = cardSummaryForGroup(LAST_CARD_GROUPS, groupName);
+      if (summary) {
+        document.getElementById("cards").innerHTML = buildWaitingCard(
+          summary.cardGroup.card_key,
+          summary.cardGroup.selected_item.group_name,
+          summary.item.status,
+        );
+        document.getElementById("replay").innerHTML = buildReplayLoadingRow(summary.cardGroup);
+      } else {
+        renderCardsPlaceholder("正在加载选中标的的详情图表...");
+        renderReplayPlaceholder("正在加载对应回放研究...");
+      }
+      updateInstrumentActiveRows();
+      ACTIVE_CARD_REFRESH_IN_FLIGHT = true;
+      try {
+        await refreshCardGroup(groupName);
+      } catch (error) {
+        renderCardsPlaceholder(`加载详情失败：${error.message}`);
+        renderReplayPlaceholder("对应回放研究加载失败。");
+      } finally {
+        ACTIVE_CARD_REFRESH_IN_FLIGHT = false;
+      }
+    }
+
+    async function refreshActiveCardGroup() {
+      if (!ACTIVE_CARD_GROUP_NAME || ACTIVE_CARD_REFRESH_IN_FLIGHT) {
+        return;
+      }
+      ACTIVE_CARD_REFRESH_IN_FLIGHT = true;
+      try {
+        await refreshCardGroup(ACTIVE_CARD_GROUP_NAME);
+      } finally {
+        ACTIVE_CARD_REFRESH_IN_FLIGHT = false;
+      }
+    }
+
     async function handleHistoryRangeChange(cardKey, groupName, rangeKey) {
       saveHistoryRangeSelection(cardKey, rangeKey);
+      ACTIVE_CARD_GROUP_NAME = groupName;
+      ACTIVE_CARD_REFRESH_IN_FLIGHT = true;
       try {
         await refreshCardGroup(groupName);
       } catch (error) {
         window.alert(`切换时间段失败：${error.message}`);
+      } finally {
+        ACTIVE_CARD_REFRESH_IN_FLIGHT = false;
       }
     }
 
     async function handleOverseasRouteChange(groupName, symbol) {
+      ACTIVE_CARD_GROUP_NAME = groupName;
+      ACTIVE_CARD_REFRESH_IN_FLIGHT = true;
       try {
         await postJson(`/api/overseas-routes/select?group_name=${encodeURIComponent(groupName)}`, {
           symbol: symbol === "__auto__" ? null : symbol,
@@ -1638,15 +1716,21 @@
         await refreshCardGroup(groupName);
       } catch (error) {
         window.alert(`更新海外比对基准失败：${error.message}`);
+      } finally {
+        ACTIVE_CARD_REFRESH_IN_FLIGHT = false;
       }
     }
 
     async function handleVariantChange(cardKey, groupName) {
       saveCardSelection(cardKey, groupName);
+      ACTIVE_CARD_GROUP_NAME = groupName;
+      ACTIVE_CARD_REFRESH_IN_FLIGHT = true;
       try {
         await refreshCardGroup(groupName);
       } catch (error) {
         window.alert(`切换税口径失败：${error.message}`);
+      } finally {
+        ACTIVE_CARD_REFRESH_IN_FLIGHT = false;
       }
     }
 
@@ -1668,30 +1752,21 @@
       `;
 
       const cardGroups = buildCardGroups(snapshot.snapshots);
+      LAST_CARD_GROUPS = cardGroups;
       renderInstrumentSummary(cardGroups, snapshot);
 
       if (!DASHBOARD_BOOTSTRAPPED) {
-        const waitingCards = cardGroups.length
-          ? cardGroups.map((cardGroup) => buildWaitingCard(
-              cardGroup.card_key,
-              cardGroup.selected_item.group_name,
-              cardGroup.selected_item.status,
-            ))
-          : (snapshot.health.pairs || [])
-            .filter((item) => !HIDDEN_CARD_KEYS.has(cardKeyForGroup(item.group_name)))
-            .map((item) => buildWaitingCard(item.group_name, item.group_name, item.status));
-        document.getElementById("cards").innerHTML = waitingCards.length
-          ? waitingCards.join("")
-          : `<article class="card"><div class="muted">等待第一轮轮询完成后展示卡片。</div></article>`;
-        document.getElementById("replay").innerHTML = cardGroups.map((cardGroup) => buildReplayLoadingRow(cardGroup)).join("");
-        await Promise.allSettled(cardGroups.map((cardGroup) => refreshCardGroup(cardGroup.selected_item.group_name)));
+        renderCardsPlaceholder();
+        renderReplayPlaceholder();
         DASHBOARD_BOOTSTRAPPED = true;
       } else {
-        applySnapshotSummaryToCards(cardGroups);
-        const missingCards = cardGroups.filter((cardGroup) => !document.getElementById(buildCardElementId(cardGroup.card_key)));
-        if (missingCards.length) {
-          await Promise.allSettled(missingCards.map((cardGroup) => refreshCardGroup(cardGroup.selected_item.group_name)));
+        if (ACTIVE_CARD_GROUP_NAME && !cardSummaryForGroup(cardGroups, ACTIVE_CARD_GROUP_NAME)) {
+          ACTIVE_CARD_GROUP_NAME = null;
+          renderCardsPlaceholder();
+          renderReplayPlaceholder();
         }
+        applySnapshotSummaryToCards(cardGroups);
+        await refreshActiveCardGroup();
       }
 
       document.getElementById("sources").innerHTML = (snapshot.health.sources || []).map((item) => `
@@ -1802,4 +1877,5 @@
 
     window.openZScoreReference = openZScoreReference;
     window.closeZScoreReference = closeZScoreReference;
+    window.handleOpenCard = handleOpenCard;
   

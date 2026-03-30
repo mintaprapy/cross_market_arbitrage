@@ -596,7 +596,29 @@
       color: inherit;
       text-decoration: none;
     }
+    .summary-link-button {
+      width: 100%;
+      padding: 0;
+      border: 0;
+      background: transparent;
+      text-align: left;
+      cursor: pointer;
+      font: inherit;
+    }
     .summary-link:hover strong {
+      color: var(--accent);
+    }
+    .summary-row-clickable {
+      cursor: pointer;
+      transition: background 140ms ease;
+    }
+    .summary-row-clickable:hover {
+      background: rgba(255, 255, 255, 0.03);
+    }
+    .summary-row-clickable.active {
+      background: rgba(244, 211, 94, 0.08);
+    }
+    .summary-row-clickable.active .summary-link strong {
       color: var(--accent);
     }
     .summary-sub {
@@ -654,6 +676,11 @@
       font-size: 12px;
       line-height: 1.2;
       flex: 0 0 auto;
+    }
+    .detail-placeholder .detail {
+      min-height: 56px;
+      display: flex;
+      align-items: center;
     }
     @media (max-width: 980px) {
       .two-up { grid-template-columns: 1fr; }

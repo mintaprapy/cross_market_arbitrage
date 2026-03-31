@@ -493,7 +493,7 @@ def main() -> None:
 
     service = build_service(
         args.config,
-        preload_spread_windows=args.command != "run-api",
+        preload_spread_windows=args.command not in {"run-api", "serve"},
     )
     app = create_app(service, run_runtime=args.command != "run-api")
     host = args.host or service.config.app.bind_host

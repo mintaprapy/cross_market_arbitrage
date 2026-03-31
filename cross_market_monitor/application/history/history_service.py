@@ -414,6 +414,156 @@ class HistoryService:
                 return source_name
         return None
 
+    def startup_history_min_rows(self, range_key: str) -> int:
+        return max(24, self.history_target_points(range_key, None) // 6)
+
+    def startup_history_start_grace(self, range_key: str) -> timedelta:
+        window = HISTORY_RANGE_CONFIG.get(range_key, HISTORY_RANGE_CONFIG[self.context.default_history_range_key])["duration"]
+        if not isinstance(window, timedelta):
+            return timedelta(0)
+        seconds = window.total_seconds()
+        return timedelta(seconds=min(max(seconds * 0.02, 3600), 43200))
+
+    def has_sufficient_local_history_coverage(
+        self,
+        coverage: dict,
+        *,
+        range_key: str,
+        start_dt: datetime | None,
+    ) -> bool:
+        if start_dt is None:
+            return False
+        if int(coverage.get("row_count") or 0) < self.startup_history_min_rows(range_key):
+            return False
+        start_ts = coverage.get("start_ts")
+        coverage_start = self.parse_optional_datetime(str(start_ts) if start_ts is not None else None)
+        if coverage_start is None:
+            return False
+        return coverage_start <= start_dt + self.startup_history_start_grace(range_key)
+
+    def has_sufficient_fx_history(
+        self,
+        *,
+        range_key: str,
+        start_dt: datetime | None,
+        end_dt: datetime | None,
+    ) -> bool:
+        source_name = self.fx_history_source()
+        if source_name is None:
+            return False
+        coverage = self.context.repository.fetch_fx_history_coverage(
+            source_name,
+            start_ts=start_dt.isoformat() if start_dt else None,
+            end_ts=end_dt.isoformat() if end_dt else None,
+        )
+        return self.has_sufficient_local_history_coverage(
+            coverage,
+            range_key=range_key,
+            start_dt=start_dt,
+        )
+
+    def has_sufficient_domestic_history(
+        self,
+        group_name: str,
+        *,
+        range_key: str,
+        start_dt: datetime | None,
+        end_dt: datetime | None,
+    ) -> bool:
+        linked_groups = self.route_preferences.linked_variant_groups(group_name)
+        start_iso = start_dt.isoformat() if start_dt else None
+        end_iso = end_dt.isoformat() if end_dt else None
+        for linked_group in linked_groups:
+            pair = self.context.pair_map[linked_group]
+            try:
+                candidate = self.domestic_history_candidate(pair)
+            except ValueError:
+                return False
+            raw_coverage = self.context.repository.fetch_raw_quote_history_coverage(
+                linked_group,
+                "domestic",
+                symbol=candidate.symbol,
+                start_ts=start_iso,
+                end_ts=end_iso,
+            )
+            if not self.has_sufficient_local_history_coverage(
+                raw_coverage,
+                range_key=range_key,
+                start_dt=start_dt,
+            ):
+                return False
+            normalized_coverage = self.context.repository.fetch_normalized_domestic_history_coverage(
+                linked_group,
+                symbol=pair.domestic_symbol,
+                start_ts=start_iso,
+                end_ts=end_iso,
+            )
+            if not self.has_sufficient_local_history_coverage(
+                normalized_coverage,
+                range_key=range_key,
+                start_dt=start_dt,
+            ):
+                return False
+        return True
+
+    def has_sufficient_overseas_history(
+        self,
+        group_name: str,
+        *,
+        range_key: str,
+        start_dt: datetime | None,
+        end_dt: datetime | None,
+    ) -> bool:
+        linked_groups = self.route_preferences.linked_variant_groups(group_name)
+        selected_group = group_name if group_name in linked_groups else linked_groups[0]
+        pair = self.context.pair_map[selected_group]
+        candidate = self.route_preferences.selected_overseas_candidate(pair)
+        if candidate is None:
+            return False
+        start_iso = start_dt.isoformat() if start_dt else None
+        end_iso = end_dt.isoformat() if end_dt else None
+        for linked_group in linked_groups:
+            coverage = self.context.repository.fetch_raw_quote_history_coverage(
+                linked_group,
+                "overseas",
+                symbol=candidate.symbol,
+                start_ts=start_iso,
+                end_ts=end_iso,
+            )
+            if not self.has_sufficient_local_history_coverage(
+                coverage,
+                range_key=range_key,
+                start_dt=start_dt,
+            ):
+                return False
+        return True
+
+    def has_sufficient_tqsdk_shadow_history(
+        self,
+        spec: dict,
+        *,
+        range_key: str,
+        start_dt: datetime | None,
+        end_dt: datetime | None,
+    ) -> bool:
+        start_iso = start_dt.isoformat() if start_dt else None
+        end_iso = end_dt.isoformat() if end_dt else None
+        for group_name in spec["group_names"]:
+            coverage = self.context.repository.fetch_raw_quote_history_coverage(
+                group_name,
+                "domestic_shadow",
+                symbol=spec["symbol"],
+                start_ts=start_iso,
+                end_ts=end_iso,
+            )
+            if not self.has_sufficient_local_history_coverage(
+                coverage,
+                range_key=range_key,
+                start_dt=start_dt,
+            ):
+                return False
+        return True
+
     def backfill_fx_history(
         self,
         *,
@@ -1029,7 +1179,16 @@ class HistoryService:
             return
 
         range_key = self.context.config.app.startup_history_backfill_range_key
-        await asyncio.to_thread(self.backfill_fx_history, range_key=range_key)
+        self.refresh_spread_windows_from_local_history()
+        start_dt, end_dt = self.resolve_history_window(range_key=range_key)
+        refreshed_after_backfill = False
+        if not self.has_sufficient_fx_history(
+            range_key=range_key,
+            start_dt=start_dt,
+            end_dt=end_dt,
+        ):
+            await asyncio.to_thread(self.backfill_fx_history, range_key=range_key)
+            refreshed_after_backfill = True
 
         processed_bases: set[str] = set()
         domestic_interval = DOMESTIC_HISTORY_INTERVAL_BY_RANGE.get(range_key, "30m")
@@ -1039,19 +1198,34 @@ class HistoryService:
             if pair_base in processed_bases:
                 continue
             processed_bases.add(pair_base)
-            await asyncio.to_thread(
-                self.backfill_domestic_history,
+            if not self.has_sufficient_domestic_history(
                 pair.group_name,
-                interval=domestic_interval,
                 range_key=range_key,
-            )
-            await asyncio.to_thread(
-                self.backfill_overseas_history,
+                start_dt=start_dt,
+                end_dt=end_dt,
+            ):
+                await asyncio.to_thread(
+                    self.backfill_domestic_history,
+                    pair.group_name,
+                    interval=domestic_interval,
+                    range_key=range_key,
+                )
+                refreshed_after_backfill = True
+            if not self.has_sufficient_overseas_history(
                 pair.group_name,
-                interval=overseas_interval,
                 range_key=range_key,
-            )
-        self.refresh_spread_windows_from_local_history()
+                start_dt=start_dt,
+                end_dt=end_dt,
+            ):
+                await asyncio.to_thread(
+                    self.backfill_overseas_history,
+                    pair.group_name,
+                    interval=overseas_interval,
+                    range_key=range_key,
+                )
+                refreshed_after_backfill = True
+        if refreshed_after_backfill:
+            self.refresh_spread_windows_from_local_history()
 
     async def maybe_backfill_tqsdk_shadow_history(self) -> None:
         if not self.context.config.app.tqsdk_shadow_enabled or not self.context.config.app.tqsdk_startup_backfill_enabled:
@@ -1074,6 +1248,13 @@ class HistoryService:
             range_key=self.context.config.app.tqsdk_startup_backfill_range_key,
         )
         for spec in specs:
+            if self.has_sufficient_tqsdk_shadow_history(
+                spec,
+                range_key=self.context.config.app.tqsdk_startup_backfill_range_key,
+                start_dt=start_dt,
+                end_dt=end_dt,
+            ):
+                continue
             started = perf_counter()
             try:
                 quotes = await asyncio.to_thread(

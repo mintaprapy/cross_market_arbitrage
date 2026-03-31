@@ -7,6 +7,7 @@ from unittest import mock
 
 from cross_market_monitor.application.service import MonitorService
 from cross_market_monitor.application.monitor.runtime import MonitorRuntime
+from cross_market_monitor.domain.formulas import normalize_domestic_quote
 from cross_market_monitor.domain.models import FXQuote, MarketQuote, MonitorConfig, SourceHealth, SpreadSnapshot, WorkerRuntimeState
 from cross_market_monitor.infrastructure.marketdata.tqsdk import TqSdkMainAdapter
 from cross_market_monitor.infrastructure.repository import SQLiteRepository
@@ -418,7 +419,7 @@ class MonitorServiceTests(unittest.TestCase):
                 }
             )
 
-            service = MonitorService(config, repository)
+            service = MonitorService(config, repository, preload_spread_windows=False)
             asyncio.run(service.poll_once())
 
             payload = service.get_card_view("AU_XAU_TEST", range_key="24h")
@@ -3216,6 +3217,137 @@ class MonitorServiceTests(unittest.TestCase):
             self.assertTrue(history)
             self.assertEqual(history[0]["domestic_symbol"], "nf_AU0")
             self.assertLess(history[0]["ts"], "2026-03-19T14:09:00+00:00")
+
+    def test_startup_skips_main_history_backfill_when_local_coverage_is_sufficient(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repository = SQLiteRepository(f"{tmp_dir}/monitor.db")
+            config = MonitorConfig.model_validate(
+                {
+                    "app": {
+                        "name": "test",
+                        "fx_source": "fx_history",
+                        "sqlite_path": f"{tmp_dir}/monitor.db",
+                        "startup_history_backfill_enabled": True,
+                        "startup_history_backfill_range_key": "30d",
+                    },
+                    "sources": {
+                        "domestic": {"kind": "mock_quote", "base_url": "http://local"},
+                        "tqsdk_domestic": {"kind": "tqsdk_main", "base_url": "wss://example.invalid"},
+                        "overseas": {"kind": "binance_futures", "base_url": "http://local"},
+                        "fx_history": {"kind": "mock_fx", "base_url": "http://local"},
+                    },
+                    "pairs": [
+                        {
+                            "group_name": "AU_XAU",
+                            "domestic_source": "domestic",
+                            "domestic_symbol": "nf_AU0",
+                            "domestic_label": "AU Main",
+                            "domestic_history_source": "tqsdk_domestic",
+                            "domestic_product_code": "au",
+                            "overseas_source": "overseas",
+                            "overseas_symbol": "XAUUSDT",
+                            "overseas_label": "Binance XAU",
+                            "formula": "gold",
+                            "domestic_unit": "CNY_PER_GRAM",
+                            "target_unit": "USD_PER_OUNCE",
+                        }
+                    ],
+                }
+            )
+            service = MonitorService(config, repository)
+            service.adapters["tqsdk_domestic"] = FakeTqSdkAdapter()
+            service.adapters["overseas"] = HistoryCapableOverseasAdapter("overseas")
+            service.adapters["fx_history"] = HistoryCapableFxAdapter("fx_history", 6.95)
+
+            pair = service.context.pair_map["AU_XAU"]
+            history_start = datetime.now(UTC) - timedelta(days=30, minutes=5)
+            for index in range(91):
+                quote_ts = history_start + timedelta(hours=8 * index)
+                domestic_quote = MarketQuote(
+                    source_name="tqsdk_domestic",
+                    symbol="KQ.m@SHFE.au",
+                    label="TqSdk AU Main",
+                    ts=quote_ts,
+                    last=1120.0 + index,
+                    bid=None,
+                    ask=None,
+                    raw_payload=f"domestic-{index}",
+                )
+                overseas_quote = MarketQuote(
+                    source_name="overseas",
+                    symbol="XAUUSDT",
+                    label="Binance XAU",
+                    ts=quote_ts,
+                    last=82.0 + index * 0.01,
+                    bid=None,
+                    ask=None,
+                    raw_payload=f"overseas-{index}",
+                )
+                fx_quote = FXQuote(
+                    source_name="fx_history",
+                    pair="USD/CNY",
+                    ts=quote_ts,
+                    rate=6.95,
+                    raw_payload=f"fx-{index}",
+                )
+                repository.insert_raw_quote_if_missing(
+                    "AU_XAU",
+                    "domestic",
+                    domestic_quote,
+                    timezone_name=config.app.timezone,
+                )
+                repository.insert_raw_quote_if_missing(
+                    "AU_XAU",
+                    "overseas",
+                    overseas_quote,
+                    timezone_name=config.app.timezone,
+                )
+                repository.insert_fx_rate_if_missing(
+                    fx_quote,
+                    timezone_name=config.app.timezone,
+                )
+                normalized = normalize_domestic_quote(
+                    pair,
+                    fx_quote.rate,
+                    domestic_quote.last,
+                    domestic_quote.bid,
+                    domestic_quote.ask,
+                )
+                repository.insert_normalized_domestic_quote_if_missing(
+                    "AU_XAU",
+                    MarketQuote(
+                        source_name=domestic_quote.source_name,
+                        symbol=pair.domestic_symbol,
+                        label=pair.domestic_label,
+                        ts=domestic_quote.ts,
+                        last=domestic_quote.last,
+                        bid=domestic_quote.bid,
+                        ask=domestic_quote.ask,
+                        raw_payload=domestic_quote.raw_payload,
+                    ),
+                    fx_source=fx_quote.source_name,
+                    fx_rate=fx_quote.rate,
+                    formula=pair.formula,
+                    formula_version=pair.formula_version,
+                    tax_mode=pair.tax_mode,
+                    target_unit=pair.target_unit,
+                    normalized_last=normalized.last,
+                    normalized_bid=normalized.bid,
+                    normalized_ask=normalized.ask,
+                    timezone_name=config.app.timezone,
+                )
+
+            with (
+                mock.patch.object(service.history, "backfill_fx_history", return_value={"supported": True}) as fx_mock,
+                mock.patch.object(service.history, "backfill_domestic_history", return_value={"supported": True}) as domestic_mock,
+                mock.patch.object(service.history, "backfill_overseas_history", return_value={"supported": True}) as overseas_mock,
+            ):
+                asyncio.run(service.startup())
+
+            fx_mock.assert_not_called()
+            domestic_mock.assert_not_called()
+            overseas_mock.assert_not_called()
+            self.assertTrue(service.context.windows["AU_XAU"].values())
 
     def test_runtime_can_start_with_background_history(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

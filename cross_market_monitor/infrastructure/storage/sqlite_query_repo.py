@@ -14,6 +14,30 @@ except Exception:  # pragma: no cover - optional dependency
 
 
 class SQLiteQueryRepoMixin:
+    def _fetch_time_coverage(
+        self,
+        table_name: str,
+        *,
+        clauses: list[str],
+        params: list[object],
+    ) -> dict:
+        query = f"""
+            SELECT
+                COUNT(*) AS row_count,
+                MIN(ts) AS start_ts,
+                MAX(ts) AS end_ts
+            FROM {table_name}
+            WHERE {" AND ".join(clauses)}
+        """
+        with self._lock, self._connect() as connection:
+            row = connection.execute(query, tuple(params)).fetchone()
+        result = dict(row) if row is not None else {}
+        return {
+            "row_count": int(result.get("row_count") or 0),
+            "start_ts": result.get("start_ts"),
+            "end_ts": result.get("end_ts"),
+        }
+
     def fetch_raw_quote_history(
         self,
         group_name: str,
@@ -69,6 +93,28 @@ class SQLiteQueryRepoMixin:
                 deduped_by_ts[key] = row
         results = sorted(deduped_by_ts.values(), key=lambda row: (row["ts"], row["id"]))
         return results if limit is None else results
+
+    def fetch_raw_quote_history_coverage(
+        self,
+        group_name: str,
+        leg_type: str,
+        *,
+        symbol: str | None = None,
+        start_ts: str | None = None,
+        end_ts: str | None = None,
+    ) -> dict:
+        clauses = ["group_name = ?", "leg_type = ?"]
+        params: list[object] = [group_name, leg_type]
+        if symbol is not None:
+            clauses.append("symbol = ?")
+            params.append(symbol)
+        if start_ts is not None:
+            clauses.append("ts >= ?")
+            params.append(start_ts)
+        if end_ts is not None:
+            clauses.append("ts <= ?")
+            params.append(end_ts)
+        return self._fetch_time_coverage("raw_quotes", clauses=clauses, params=params)
 
     def fetch_normalized_domestic_history(
         self,
@@ -127,6 +173,27 @@ class SQLiteQueryRepoMixin:
         results = [dict(row) for row in rows]
         return results if limit is None else list(reversed(results))
 
+    def fetch_normalized_domestic_history_coverage(
+        self,
+        group_name: str,
+        *,
+        symbol: str | None = None,
+        start_ts: str | None = None,
+        end_ts: str | None = None,
+    ) -> dict:
+        clauses = ["group_name = ?"]
+        params: list[object] = [group_name]
+        if symbol is not None:
+            clauses.append("symbol = ?")
+            params.append(symbol)
+        if start_ts is not None:
+            clauses.append("ts >= ?")
+            params.append(start_ts)
+        if end_ts is not None:
+            clauses.append("ts <= ?")
+            params.append(end_ts)
+        return self._fetch_time_coverage("normalized_domestic_quotes", clauses=clauses, params=params)
+
     def fetch_fx_history(
         self,
         source_name: str,
@@ -160,6 +227,23 @@ class SQLiteQueryRepoMixin:
             rows = connection.execute(query, query_params).fetchall()
         results = [dict(row) for row in rows]
         return results if limit is None else list(reversed(results))
+
+    def fetch_fx_history_coverage(
+        self,
+        source_name: str,
+        *,
+        start_ts: str | None = None,
+        end_ts: str | None = None,
+    ) -> dict:
+        clauses = ["source_name = ?"]
+        params: list[object] = [source_name]
+        if start_ts is not None:
+            clauses.append("ts >= ?")
+            params.append(start_ts)
+        if end_ts is not None:
+            clauses.append("ts <= ?")
+            params.append(end_ts)
+        return self._fetch_time_coverage("fx_rates", clauses=clauses, params=params)
 
     def fetch_history(
         self,

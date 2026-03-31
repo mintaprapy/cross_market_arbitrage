@@ -1,4 +1,5 @@
 import asyncio
+import sys
 import unittest
 from unittest import mock
 
@@ -43,6 +44,29 @@ class MainTests(unittest.TestCase):
         service.startup.assert_awaited_once_with(background_history=True)
         service.run_forever.assert_awaited_once_with()
         service.shutdown.assert_awaited_once_with()
+
+    def test_serve_skips_spread_window_preload_for_fast_boot(self) -> None:
+        service = mock.Mock()
+        service.config.app.bind_host = "127.0.0.1"
+        service.config.app.bind_port = 6080
+        app = object()
+
+        with (
+            mock.patch.object(sys, "argv", ["cross-market-monitor", "--config", "config/monitor.yaml", "serve"]),
+            mock.patch("cross_market_monitor.main.configure_logging", return_value="Asia/Shanghai"),
+            mock.patch("cross_market_monitor.main.build_service", return_value=service) as build_service,
+            mock.patch("cross_market_monitor.main.build_uvicorn_log_config", return_value={"version": 1}),
+            mock.patch("cross_market_monitor.interfaces.api.app.create_app", return_value=app) as create_app,
+            mock.patch("uvicorn.run") as uvicorn_run,
+        ):
+            main.main()
+
+        build_service.assert_called_once_with(
+            "config/monitor.yaml",
+            preload_spread_windows=False,
+        )
+        create_app.assert_called_once_with(service, run_runtime=True)
+        uvicorn_run.assert_called_once()
 
 
 if __name__ == "__main__":

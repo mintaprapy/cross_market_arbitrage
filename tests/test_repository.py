@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from unittest import mock
 
-from cross_market_monitor.domain.models import MarketQuote, SourceHealth, SpreadSnapshot, WorkerRuntimeState
+from cross_market_monitor.domain.models import FXQuote, MarketQuote, SourceHealth, SpreadSnapshot, WorkerRuntimeState
 from cross_market_monitor.infrastructure.repository import SQLiteRepository
 from cross_market_monitor.infrastructure.storage.sqlite_base import SQLiteRepositoryBase
 
@@ -113,6 +113,70 @@ class RepositoryTests(unittest.TestCase):
             self.assertEqual(rows[0]["symbol"], "ag2604")
             self.assertEqual(rows[0]["normalized_last"], 95.55)
             self.assertTrue(rows[0]["ts_local"].endswith("+08:00"))
+
+    def test_reports_history_coverage_ranges(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repository = SQLiteRepository(f"{tmp_dir}/monitor.db")
+            raw_quote = MarketQuote(
+                source_name="domestic",
+                symbol="nf_AU0",
+                label="AU Main",
+                ts=datetime(2026, 3, 10, 0, 0, tzinfo=UTC),
+                last=100.0,
+                bid=None,
+                ask=None,
+                raw_payload="raw",
+            )
+            later_raw_quote = raw_quote.model_copy(update={"ts": datetime(2026, 3, 12, 0, 0, tzinfo=UTC), "last": 101.0})
+            repository.insert_raw_quote("AU_XAU", "domestic", raw_quote, timezone_name="Asia/Shanghai")
+            repository.insert_raw_quote("AU_XAU", "domestic", later_raw_quote, timezone_name="Asia/Shanghai")
+            repository.insert_normalized_domestic_quote(
+                "AU_XAU",
+                later_raw_quote,
+                fx_source="fx",
+                fx_rate=6.9,
+                formula="gold",
+                formula_version="v1",
+                tax_mode="gross",
+                target_unit="USD_PER_OUNCE",
+                normalized_last=455.0,
+                normalized_bid=None,
+                normalized_ask=None,
+                timezone_name="Asia/Shanghai",
+            )
+            repository.insert_fx_rate(
+                FXQuote(
+                    source_name="fx",
+                    pair="USD/CNY",
+                    ts=datetime(2026, 3, 11, 0, 0, tzinfo=UTC),
+                    rate=6.9,
+                    raw_payload="fx-1",
+                ),
+                timezone_name="Asia/Shanghai",
+            )
+            repository.insert_fx_rate(
+                FXQuote(
+                    source_name="fx",
+                    pair="USD/CNY",
+                    ts=datetime(2026, 3, 12, 0, 0, tzinfo=UTC),
+                    rate=6.95,
+                    raw_payload="fx-2",
+                ),
+                timezone_name="Asia/Shanghai",
+            )
+
+            raw_coverage = repository.fetch_raw_quote_history_coverage("AU_XAU", "domestic", symbol="nf_AU0")
+            normalized_coverage = repository.fetch_normalized_domestic_history_coverage("AU_XAU", symbol="nf_AU0")
+            fx_coverage = repository.fetch_fx_history_coverage("fx")
+
+            self.assertEqual(raw_coverage["row_count"], 2)
+            self.assertEqual(raw_coverage["start_ts"], "2026-03-10T00:00:00+00:00")
+            self.assertEqual(raw_coverage["end_ts"], "2026-03-12T00:00:00+00:00")
+            self.assertEqual(normalized_coverage["row_count"], 1)
+            self.assertEqual(normalized_coverage["start_ts"], "2026-03-12T00:00:00+00:00")
+            self.assertEqual(fx_coverage["row_count"], 2)
+            self.assertEqual(fx_coverage["start_ts"], "2026-03-11T00:00:00+00:00")
+            self.assertEqual(fx_coverage["end_ts"], "2026-03-12T00:00:00+00:00")
 
     def test_persists_dual_timestamps_and_exports_csv(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

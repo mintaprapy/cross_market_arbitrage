@@ -225,8 +225,8 @@ class MonitorService:
     def latest_fx_jump_pct(self) -> float | None:
         return self.context.latest_fx_jump_pct
 
-    async def run_forever(self) -> None:
-        await self.runtime.run_forever()
+    async def run_forever(self, *, initial_delay_sec: float = 0.0) -> None:
+        await self.runtime.run_forever(initial_delay_sec=initial_delay_sec)
 
     async def startup(self, *, background_history: bool = False) -> None:
         await self.runtime.startup(background_history=background_history)

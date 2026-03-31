@@ -1,6 +1,7 @@
 import asyncio
 import tempfile
 import unittest
+from unittest import mock
 
 from cross_market_monitor.application.service import MonitorService
 from cross_market_monitor.domain.models import MonitorConfig
@@ -77,6 +78,28 @@ class ApiTests(unittest.TestCase):
             self.assertTrue(js_path.exists())
             self.assertIn("--bg", css_path.read_text(encoding="utf-8"))
             self.assertIn("async function fetchJson", js_path.read_text(encoding="utf-8"))
+
+    def test_runtime_mode_polls_once_before_background_start(self) -> None:
+        service = mock.Mock()
+        service.config.app.name = "API Test"
+        service.config.app.poll_interval_sec = 10
+        service.poll_once = mock.AsyncMock()
+        runtime = mock.Mock()
+        runtime.start = mock.AsyncMock()
+        runtime.stop = mock.AsyncMock()
+
+        with mock.patch("cross_market_monitor.interfaces.api.app.MonitorRuntime", return_value=runtime):
+            app = create_app(service, run_runtime=True)
+
+            async def run_case() -> None:
+                async with app.router.lifespan_context(app):
+                    pass
+
+            asyncio.run(run_case())
+
+        service.poll_once.assert_awaited_once_with()
+        runtime.start.assert_awaited_once_with(background_startup=True, initial_delay_sec=10)
+        runtime.stop.assert_awaited_once_with()
 
 
 if __name__ == "__main__":

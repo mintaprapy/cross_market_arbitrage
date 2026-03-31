@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 from functools import lru_cache
+import logging
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -14,6 +15,7 @@ from cross_market_monitor.interfaces.api.routes_market import build_market_route
 from cross_market_monitor.interfaces.api.routes_ops import build_ops_router
 
 DASHBOARD_DIR = Path(__file__).resolve().parents[1] / "dashboard"
+LOGGER = logging.getLogger("cross_market_monitor")
 
 
 @lru_cache(maxsize=1)
@@ -32,7 +34,13 @@ def create_app(service: MonitorService, *, run_runtime: bool = True) -> FastAPI:
             yield
             return
         runtime = MonitorRuntime(service)
-        await runtime.start(background_startup=True)
+        initial_delay_sec = 0.0
+        try:
+            await service.poll_once()
+            initial_delay_sec = service.config.app.poll_interval_sec
+        except Exception:  # pragma: no cover - startup guard
+            LOGGER.exception("Initial poll during API startup failed")
+        await runtime.start(background_startup=True, initial_delay_sec=initial_delay_sec)
         yield
         await runtime.stop()
 

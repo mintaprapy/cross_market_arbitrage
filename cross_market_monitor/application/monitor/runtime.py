@@ -39,7 +39,16 @@ class RuntimeService:
         for group_name in disabled_group_names:
             self.context.latest_snapshots.pop(group_name, None)
 
-    async def run_forever(self) -> None:
+    async def run_forever(self, *, initial_delay_sec: float = 0.0) -> None:
+        if initial_delay_sec > 0:
+            try:
+                await asyncio.wait_for(
+                    self.context.stop_event.wait(),
+                    timeout=initial_delay_sec,
+                )
+                return
+            except TimeoutError:
+                pass
         while not self.context.stop_event.is_set():
             try:
                 await self.poll_cycle.poll_once()
@@ -101,10 +110,10 @@ class MonitorRuntime:
         self.service = service
         self.task: asyncio.Task | None = None
 
-    async def start(self, *, background_startup: bool = False) -> None:
+    async def start(self, *, background_startup: bool = False, initial_delay_sec: float = 0.0) -> None:
         if self.task is None:
             await self.service.startup(background_history=background_startup)
-            self.task = asyncio.create_task(self.service.run_forever())
+            self.task = asyncio.create_task(self.service.run_forever(initial_delay_sec=initial_delay_sec))
 
     async def stop(self) -> None:
         await self.service.shutdown()

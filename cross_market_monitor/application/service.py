@@ -106,7 +106,13 @@ def _build_adapter(source_name: str, source_config: SourceConfig, timeout_sec: i
 
 
 class MonitorService:
-    def __init__(self, config: MonitorConfig, repository: SQLiteRepository) -> None:
+    def __init__(
+        self,
+        config: MonitorConfig,
+        repository: SQLiteRepository,
+        *,
+        preload_spread_windows: bool = True,
+    ) -> None:
         self.config = config
         self.repository = repository
         self._local_tz = self._resolve_timezone(config.app.timezone)
@@ -188,7 +194,8 @@ class MonitorService:
 
         self._preload_cached_state()
         self.route_preferences.load_persisted_preferences()
-        self.history.refresh_spread_windows_from_local_history()
+        if preload_spread_windows:
+            self.history.refresh_spread_windows_from_local_history()
 
     @property
     def started_at(self) -> datetime:
@@ -239,8 +246,18 @@ class MonitorService:
     def get_snapshot_summary(self) -> dict:
         return self.query.get_snapshot_summary()
 
-    def get_card_view(self, group_name: str, range_key: str | None = None) -> dict:
-        return self.query.get_card_view(group_name, range_key=range_key)
+    def get_card_view(
+        self,
+        group_name: str,
+        range_key: str | None = None,
+        *,
+        include_replay: bool = False,
+    ) -> dict:
+        return self.query.get_card_view(
+            group_name,
+            range_key=range_key,
+            include_replay=include_replay,
+        )
 
     def get_history(
         self,

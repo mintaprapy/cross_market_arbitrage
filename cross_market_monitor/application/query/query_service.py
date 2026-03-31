@@ -216,7 +216,13 @@ class QueryService:
         }
         return payload
 
-    def get_card_view(self, group_name: str, range_key: str | None = None) -> dict:
+    def get_card_view(
+        self,
+        group_name: str,
+        range_key: str | None = None,
+        *,
+        include_replay: bool = False,
+    ) -> dict:
         snapshots = self._current_snapshots()
         linked_groups = self.route_preferences.linked_variant_groups(group_name)
         selected_group = group_name if group_name in linked_groups else linked_groups[0]
@@ -253,7 +259,7 @@ class QueryService:
                 selected_item["overseas_last"] = latest_history["overseas_last"]
                 selected_item["spread"] = latest_history["spread"]
                 selected_item["spread_pct"] = latest_history["spread_pct"]
-        return {
+        payload = {
             "card_group": {
                 "card_key": variant_group_base(selected_group),
                 "variants": variants,
@@ -264,8 +270,10 @@ class QueryService:
             "history_range_key": normalized_range_key,
             "history": history_rows,
             "shadow_comparison": shadow_comparison,
-            "replay_summary": self.replay_summary(selected_group, limit=500),
         }
+        if include_replay:
+            payload["replay_summary"] = self.replay_summary(selected_group, limit=500)
+        return payload
 
     def get_alerts(self, limit: int = 100) -> list[dict]:
         return self.context.repository.fetch_alerts(limit)

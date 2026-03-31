@@ -1597,6 +1597,19 @@
       return buildReplayRowMarkup(cardGroup, report);
     }
 
+    async function refreshReplayRow(cardGroup) {
+      if (!cardGroup || !cardGroup.selected_item) {
+        return;
+      }
+      const replayMarkup = await buildReplayRow(cardGroup);
+      const existingReplayRow = document.getElementById(buildReplayRowId(cardGroup.card_key));
+      if (existingReplayRow) {
+        existingReplayRow.outerHTML = replayMarkup;
+      } else {
+        document.getElementById("replay").innerHTML = replayMarkup;
+      }
+    }
+
     function setCardBusy(cardKey, busy) {
       const card = document.getElementById(buildCardElementId(cardKey));
       if (card) {
@@ -1631,14 +1644,6 @@
           document.getElementById("cards").innerHTML = cardMarkup;
         }
 
-        const replayMarkup = buildReplayRowMarkup(cardGroup, payload.replay_summary);
-        const existingReplayRow = document.getElementById(buildReplayRowId(cardGroup.card_key));
-        if (existingReplayRow) {
-          existingReplayRow.outerHTML = replayMarkup;
-        } else {
-          document.getElementById("replay").innerHTML = replayMarkup;
-        }
-
         const instrumentRowMarkup = buildInstrumentRow(
           cardGroup,
           payload.domestic_route_preference,
@@ -1649,6 +1654,20 @@
           existingInstrumentRow.outerHTML = instrumentRowMarkup;
         }
         hydrateCardCharts(cardGroup.card_key);
+        refreshReplayRow(cardGroup).catch((error) => {
+          const existingReplayRow = document.getElementById(buildReplayRowId(cardGroup.card_key));
+          const message = `
+            <tr id="${buildReplayRowId(cardGroup.card_key)}">
+              <td>${escapeHtml(cardGroup.display_name || displayNameForGroup(cardGroup.card_key || cardGroup.selected_item.group_name))}</td>
+              <td colspan="6" class="muted">回放研究加载失败：${escapeHtml(error.message)}</td>
+            </tr>
+          `;
+          if (existingReplayRow) {
+            existingReplayRow.outerHTML = message;
+          } else {
+            document.getElementById("replay").innerHTML = message;
+          }
+        });
       } catch (error) {
         setCardBusy(cardKey, false);
         throw error;

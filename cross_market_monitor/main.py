@@ -95,11 +95,20 @@ def load_runtime(config_path: str, *, app_overrides: dict | None = None):
     return config, repository
 
 
-def build_service(config_path: str, *, app_overrides: dict | None = None):
+def build_service(
+    config_path: str,
+    *,
+    app_overrides: dict | None = None,
+    preload_spread_windows: bool = True,
+):
     from cross_market_monitor.application.service import MonitorService
 
     config, repository = load_runtime(config_path, app_overrides=app_overrides)
-    return MonitorService(config, repository)
+    return MonitorService(
+        config,
+        repository,
+        preload_spread_windows=preload_spread_windows,
+    )
 
 
 def print_console_table(snapshot_payload: dict) -> None:
@@ -482,7 +491,10 @@ def main() -> None:
     from cross_market_monitor.interfaces.api.app import create_app
     import uvicorn
 
-    service = build_service(args.config)
+    service = build_service(
+        args.config,
+        preload_spread_windows=args.command != "run-api",
+    )
     app = create_app(service, run_runtime=args.command != "run-api")
     host = args.host or service.config.app.bind_host
     port = args.port or service.config.app.bind_port

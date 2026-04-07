@@ -1,9 +1,10 @@
 import unittest
 from datetime import UTC, datetime
+from zoneinfo import ZoneInfo
 
 from cross_market_monitor.application.common import display_group_name
 from cross_market_monitor.domain.models import AlertEvent, NotifierConfig
-from cross_market_monitor.infrastructure.notifiers import ConsoleNotifier, human_notification_text
+from cross_market_monitor.infrastructure.notifiers import ConsoleNotifier, alert_payload, human_notification_text
 
 
 class NotifierFilterTests(unittest.TestCase):
@@ -66,6 +67,38 @@ class NotifierFilterTests(unittest.TestCase):
         self.assertEqual(display_group_name("AG_XAG_GROSS"), "AG_XAG")
         self.assertEqual(display_group_name("AG_XAG_NET"), "AG_XAG除税")
         self.assertEqual(display_group_name("AU_XAU"), "AU_XAU")
+
+    def test_data_quality_notification_uses_asia_shanghai_time(self) -> None:
+        alert = AlertEvent(
+            ts=datetime(2026, 4, 3, 3, 10, 57, 731783, tzinfo=UTC),
+            group_name="CU_COPPER_GROSS",
+            category="data_quality",
+            severity="warning",
+            message="CU_COPPER data status is stale",
+            metadata={},
+        )
+
+        self.assertEqual(
+            human_notification_text(alert),
+            "[WARNING] CU_COPPER data_quality\n"
+            "CU_COPPER data status is stale\n"
+            "2026-04-03T11:10:57.731783+08:00",
+        )
+
+    def test_alert_payload_includes_local_and_utc_timestamps(self) -> None:
+        alert = AlertEvent(
+            ts=datetime(2026, 4, 3, 3, 10, 57, 731783, tzinfo=UTC),
+            group_name="BC_COPPER",
+            category="data_quality",
+            severity="warning",
+            message="BC_COPPER data status is stale",
+            metadata={},
+        )
+
+        payload = alert_payload(alert, ZoneInfo("Asia/Shanghai"))
+        self.assertEqual(payload["timestamp"], "2026-04-03T11:10:57.731783+08:00")
+        self.assertEqual(payload["timestamp_local"], "2026-04-03T11:10:57.731783+08:00")
+        self.assertEqual(payload["timestamp_utc"], "2026-04-03T03:10:57.731783+00:00")
 
 
 if __name__ == "__main__":

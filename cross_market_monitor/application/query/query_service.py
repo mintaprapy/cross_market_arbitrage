@@ -182,6 +182,13 @@ class QueryService:
             ],
         }
 
+    def get_snapshot_row(self, group_name: str) -> dict | None:
+        snapshots = self._current_snapshots()
+        snapshot = snapshots.get(group_name)
+        if snapshot is None:
+            return None
+        return self._snapshot_payload(snapshot)
+
     def get_snapshot(self, *, include_cards: bool = False) -> dict:
         summary = self.get_snapshot_summary()
         domestic_preferences = {

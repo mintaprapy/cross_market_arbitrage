@@ -20,11 +20,13 @@ class RuntimeService:
         history: HistoryService,
         retention: RetentionService,
         poll_cycle: PollCycleService,
+        telegram_commands,
     ) -> None:
         self.context = context
         self.history = history
         self.retention = retention
         self.poll_cycle = poll_cycle
+        self.telegram_commands = telegram_commands
 
     def _clear_disabled_group_snapshots(self) -> None:
         enabled_group_names = {pair.group_name for pair in self.context.enabled_pairs}
@@ -85,6 +87,10 @@ class RuntimeService:
         self.context.startup_completed = True
         self._clear_disabled_group_snapshots()
         self.context.repository.upsert_runtime_state(build_worker_runtime_state(self.context))
+        if self.telegram_commands.enabled and (
+            self.context.telegram_task is None or self.context.telegram_task.done()
+        ):
+            self.context.telegram_task = asyncio.create_task(self.telegram_commands.run_forever())
         if background_history:
             if self.context.startup_task is None or self.context.startup_task.done():
                 self.context.startup_task = asyncio.create_task(self._finish_startup())
@@ -99,6 +105,11 @@ class RuntimeService:
             with suppress(asyncio.CancelledError):
                 await self.context.startup_task
             self.context.startup_task = None
+        if self.context.telegram_task is not None:
+            self.context.telegram_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await self.context.telegram_task
+            self.context.telegram_task = None
         if self.context.shadow_thread is not None:
             await asyncio.to_thread(self.context.shadow_thread.join, 5.0)
             self.context.shadow_thread = None

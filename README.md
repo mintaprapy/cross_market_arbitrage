@@ -429,6 +429,39 @@ notifiers:
 - `group_names` 不填时，表示不过滤交易对
 - 如果一个组在 `config/alert_thresholds.yaml` 里填了阈值，命中后就会推送到所有满足 `min_severity / group_names` 的通知器
 
+### Telegram 查询命令
+
+如果启用了 `telegram` 通知器，系统会同时开启 Telegram 轮询命令，只接受该通知器配置里的 `chat_id`。
+
+可用命令：
+
+- `/help`
+- `/pairs`
+- `/quote <交易对>`
+- `/status <交易对>`
+
+示例：
+
+```text
+/pairs
+/quote AU_XAU
+/quote CU_COPPER
+/quote CU_COPPER除税
+```
+
+`/quote` 返回的核心字段包括：
+
+- 当前状态
+- 实时价差百分比
+- 理论价差
+- `Z-Score`
+- 国内价格
+- 国内换算价
+- 海外最新价
+- 汇率
+- 国内 / 海外 / 汇率时效
+- 当前香港/北京时间
+
 默认地址：
 
 - `http://<server-ip>:6080/`

@@ -15,6 +15,7 @@ from cross_market_monitor.application.monitor.quote_router import QuoteRouter
 from cross_market_monitor.application.monitor.runtime import MonitorRuntime, RuntimeService
 from cross_market_monitor.application.monitor.snapshot_builder import SnapshotBuilder
 from cross_market_monitor.application.monitor.source_health import SourceHealthRecorder
+from cross_market_monitor.application.monitor.telegram_command_service import TelegramCommandService
 from cross_market_monitor.application.query.query_service import QueryService
 from cross_market_monitor.application.replay import ReplayAnalyzer
 from cross_market_monitor.domain.models import FXQuote, MarketQuote, MonitorConfig, SourceConfig, SourceHealth
@@ -129,7 +130,11 @@ class MonitorService:
             source_name: _build_adapter(source_name, source_config, config.app.http_timeout_sec)
             for source_name, source_config in config.sources.items()
         }
-        self.notifiers = [build_notifier(notifier) for notifier in config.notifiers if notifier.enabled]
+        self.notifiers = [
+            build_notifier(notifier, timezone_name=config.app.timezone)
+            for notifier in config.notifiers
+            if notifier.enabled
+        ]
         zscore_max_age = (
             timedelta(days=config.app.zscore_window_days)
             if config.app.zscore_window_days > 0
@@ -190,7 +195,14 @@ class MonitorService:
         )
         self.poll_cycle = PollCycleService(self.context, self.fx_service, self.snapshot_builder)
         self.query = QueryService(self.context, self.route_preferences, self.history)
-        self.runtime = RuntimeService(self.context, self.history, self.retention, self.poll_cycle)
+        self.telegram_commands = TelegramCommandService(self.context, self.query)
+        self.runtime = RuntimeService(
+            self.context,
+            self.history,
+            self.retention,
+            self.poll_cycle,
+            self.telegram_commands,
+        )
 
         self._preload_cached_state()
         self.route_preferences.load_persisted_preferences()

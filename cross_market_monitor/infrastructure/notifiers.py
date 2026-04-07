@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import UTC, datetime
+from zoneinfo import ZoneInfo
 
 from cross_market_monitor.application.common import display_group_name
 from cross_market_monitor.domain.models import AlertEvent, NotifierConfig
@@ -18,8 +20,10 @@ class NotifyResult:
 
 
 class BaseNotifier:
-    def __init__(self, config: NotifierConfig) -> None:
+    def __init__(self, config: NotifierConfig, timezone_name: str = "Asia/Shanghai") -> None:
         self.config = config
+        self.timezone_name = timezone_name
+        self.timezone = ZoneInfo(timezone_name)
 
     def should_send(self, alert: AlertEvent) -> bool:
         if SEVERITY_RANK[alert.severity] < SEVERITY_RANK[self.config.min_severity]:
@@ -31,7 +35,7 @@ class BaseNotifier:
 
 class ConsoleNotifier(BaseNotifier):
     def send(self, alert: AlertEvent) -> NotifyResult:
-        payload = alert_payload(alert)
+        payload = alert_payload(alert, self.timezone)
         print(
             f"[ALERT][{alert.severity.upper()}][{alert.group_name}][{alert.category}] {alert.message}"
         )
@@ -44,14 +48,19 @@ class ConsoleNotifier(BaseNotifier):
 
 
 class WebhookNotifier(BaseNotifier):
-    def __init__(self, config: NotifierConfig, http_client: HttpClient) -> None:
-        super().__init__(config)
+    def __init__(
+        self,
+        config: NotifierConfig,
+        http_client: HttpClient,
+        timezone_name: str = "Asia/Shanghai",
+    ) -> None:
+        super().__init__(config, timezone_name=timezone_name)
         self.http_client = http_client
 
     def send(self, alert: AlertEvent) -> NotifyResult:
         if not self.config.url:
             raise ValueError(f"Webhook notifier {self.config.name} is missing url")
-        payload = alert_payload(alert)
+        payload = alert_payload(alert, self.timezone)
         response = self.http_client.post_json(self.config.url, payload, headers=self.config.headers)
         return NotifyResult(
             notifier_name=self.config.name,
@@ -68,7 +77,7 @@ class FeishuNotifier(WebhookNotifier):
         payload = {
             "msg_type": "text",
             "content": {
-                "text": human_notification_text(alert)
+                "text": human_notification_text(alert, self.timezone)
             },
         }
         response = self.http_client.post_json(self.config.url, payload, headers=self.config.headers)
@@ -87,7 +96,7 @@ class WecomNotifier(WebhookNotifier):
         payload = {
             "msgtype": "markdown",
             "markdown": {
-                "content": human_notification_text(alert).replace("\n", "\n> ")
+                "content": human_notification_text(alert, self.timezone).replace("\n", "\n> ")
             },
         }
         response = self.http_client.post_json(self.config.url, payload, headers=self.config.headers)
@@ -100,8 +109,13 @@ class WecomNotifier(WebhookNotifier):
 
 
 class TelegramNotifier(BaseNotifier):
-    def __init__(self, config: NotifierConfig, http_client: HttpClient) -> None:
-        super().__init__(config)
+    def __init__(
+        self,
+        config: NotifierConfig,
+        http_client: HttpClient,
+        timezone_name: str = "Asia/Shanghai",
+    ) -> None:
+        super().__init__(config, timezone_name=timezone_name)
         self.http_client = http_client
 
     def send(self, alert: AlertEvent) -> NotifyResult:
@@ -111,7 +125,7 @@ class TelegramNotifier(BaseNotifier):
             )
         payload = {
             "chat_id": self.config.chat_id,
-            "text": human_notification_text(alert),
+            "text": human_notification_text(alert, self.timezone),
         }
         url = f"https://api.telegram.org/bot{self.config.bot_token}/sendMessage"
         response = self.http_client.post_json(url, payload, headers=self.config.headers)
@@ -123,10 +137,16 @@ class TelegramNotifier(BaseNotifier):
         )
 
 
-def alert_payload(alert: AlertEvent) -> dict:
+def _format_local_timestamp(ts: datetime, timezone: ZoneInfo) -> str:
+    return ts.astimezone(timezone).isoformat()
+
+
+def alert_payload(alert: AlertEvent, timezone: ZoneInfo) -> dict:
     title_group_name = display_group_name(alert.group_name) if alert.category == "data_quality" else alert.group_name
     return {
-        "timestamp": alert.ts.isoformat(),
+        "timestamp": _format_local_timestamp(alert.ts, timezone),
+        "timestamp_local": _format_local_timestamp(alert.ts, timezone),
+        "timestamp_utc": alert.ts.astimezone(UTC).isoformat(),
         "title": f"{title_group_name} {alert.category} {alert.severity}",
         "group_name": alert.group_name,
         "category": alert.category,
@@ -136,27 +156,28 @@ def alert_payload(alert: AlertEvent) -> dict:
     }
 
 
-def human_notification_text(alert: AlertEvent) -> str:
+def human_notification_text(alert: AlertEvent, timezone: ZoneInfo | None = None) -> str:
     if alert.category in {"spread_level", "spread_pct"}:
         return alert.message
+    timezone = timezone or ZoneInfo("Asia/Shanghai")
     group_name = display_group_name(alert.group_name) if alert.category == "data_quality" else alert.group_name
     return (
         f"[{alert.severity.upper()}] {group_name} {alert.category}\n"
         f"{alert.message}\n"
-        f"{alert.ts.isoformat()}"
+        f"{_format_local_timestamp(alert.ts, timezone)}"
     )
 
 
-def build_notifier(config: NotifierConfig):
+def build_notifier(config: NotifierConfig, timezone_name: str = "Asia/Shanghai"):
     http_client = HttpClient(timeout_sec=config.timeout_sec)
     if config.kind == "console":
-        return ConsoleNotifier(config)
+        return ConsoleNotifier(config, timezone_name=timezone_name)
     if config.kind == "webhook":
-        return WebhookNotifier(config, http_client)
+        return WebhookNotifier(config, http_client, timezone_name=timezone_name)
     if config.kind == "feishu":
-        return FeishuNotifier(config, http_client)
+        return FeishuNotifier(config, http_client, timezone_name=timezone_name)
     if config.kind == "telegram":
-        return TelegramNotifier(config, http_client)
+        return TelegramNotifier(config, http_client, timezone_name=timezone_name)
     if config.kind == "wecom":
-        return WecomNotifier(config, http_client)
+        return WecomNotifier(config, http_client, timezone_name=timezone_name)
     raise ValueError(f"Unsupported notifier kind: {config.kind}")

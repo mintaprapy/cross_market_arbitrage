@@ -42,6 +42,7 @@ class ServiceContext:
     stop_event: asyncio.Event = field(default_factory=asyncio.Event)
     startup_completed: bool = False
     startup_task: asyncio.Task | None = None
+    telegram_task: asyncio.Task | None = None
     shadow_stop_event: threading.Event = field(default_factory=threading.Event)
     shadow_thread: threading.Thread | None = None
     cooldowns: dict[tuple[str, str], datetime] = field(default_factory=dict)

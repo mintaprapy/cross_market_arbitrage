@@ -116,6 +116,11 @@
       })}%`;
     }
 
+    function formatFxInputValue(value) {
+      const numeric = toFiniteNumber(value);
+      return numeric === null ? "" : numeric.toFixed(4);
+    }
+
     function escapeHtml(value) {
       if (value === null || value === undefined) return "";
       return String(value)
@@ -220,11 +225,20 @@
     const CARD_SELECTION_STORAGE_KEY = "cross-market-card-selection-v5";
     const HISTORY_RANGE_STORAGE_KEY = "cross-market-history-range-v1";
     const CHART_VISIBILITY_STORAGE_KEY = "cross-market-chart-visibility-v1";
+    const CUSTOM_FX_RATE_STORAGE_KEY = "cross-market-custom-fx-rate-v1";
     const DEFAULT_HISTORY_RANGE_KEY = "24h";
+    const TROY_OUNCE_IN_GRAMS = 31.1034768;
+    const POUNDS_PER_METRIC_TON = 2204.62262;
+    const KILOGRAMS_PER_SOYBEAN_BUSHEL = 27.2155422;
+    const KILOGRAMS_PER_METRIC_TON = 1000.0;
+    const VAT_RATE = 1.13;
     let DASHBOARD_BOOTSTRAPPED = false;
     let ACTIVE_CARD_GROUP_NAME = null;
     let ACTIVE_CARD_REFRESH_IN_FLIGHT = false;
     let LAST_CARD_GROUPS = [];
+    let LAST_SNAPSHOT_PAYLOAD = null;
+    let CURRENT_CUSTOM_FX_RATE = loadCustomFxRate();
+    const CARD_PAYLOAD_CACHE = {};
     const HISTORY_RANGE_OPTIONS = [
       { key: "24h", label: "24h" },
       { key: "7d", label: "7天" },
@@ -235,6 +249,134 @@
     ];
     const Z_SCORE_REFERENCE_VALUES = [0.5, 1, 1.5, 2, 2.5, 3, 4];
     const CARD_CHART_STATE = {};
+
+    function loadCustomFxRate() {
+      try {
+        const raw = window.localStorage.getItem(CUSTOM_FX_RATE_STORAGE_KEY);
+        const numeric = toFiniteNumber(raw);
+        return numeric !== null && numeric > 0 ? numeric : null;
+      } catch (_error) {
+        return null;
+      }
+    }
+
+    function persistCustomFxRate(value) {
+      if (value === null) {
+        window.localStorage.removeItem(CUSTOM_FX_RATE_STORAGE_KEY);
+      } else {
+        window.localStorage.setItem(CUSTOM_FX_RATE_STORAGE_KEY, String(value));
+      }
+      CURRENT_CUSTOM_FX_RATE = value;
+    }
+
+    function activeCustomFxRate() {
+      return toFiniteNumber(CURRENT_CUSTOM_FX_RATE);
+    }
+
+    function displayFxRate(health) {
+      return activeCustomFxRate() ?? toFiniteNumber(health?.latest_fx_rate);
+    }
+
+    function customFxActive() {
+      return activeCustomFxRate() !== null;
+    }
+
+    function applyTaxMode(rawValue, taxMode) {
+      const numeric = toFiniteNumber(rawValue);
+      if (numeric === null) return null;
+      return taxMode === "net" ? numeric / VAT_RATE : numeric;
+    }
+
+    function normalizeDomesticPriceWithFx(rawPrice, item, fxRate) {
+      const rawNumeric = toFiniteNumber(rawPrice);
+      const fxNumeric = toFiniteNumber(fxRate);
+      if (rawNumeric === null || fxNumeric === null || fxNumeric <= 0 || !item?.formula) {
+        return null;
+      }
+      if (item.formula === "gold") {
+        return rawNumeric * TROY_OUNCE_IN_GRAMS / fxNumeric;
+      }
+      if (item.formula === "silver") {
+        const taxable = applyTaxMode(rawNumeric / 1000.0, item.tax_mode);
+        return taxable === null ? null : taxable * TROY_OUNCE_IN_GRAMS / fxNumeric;
+      }
+      if (item.formula === "copper") {
+        const taxable = applyTaxMode(rawNumeric, item.tax_mode);
+        return taxable === null ? null : taxable / fxNumeric / POUNDS_PER_METRIC_TON;
+      }
+      if (item.formula === "crude_oil") {
+        return rawNumeric / fxNumeric;
+      }
+      if (item.formula === "cotton") {
+        return rawNumeric / fxNumeric / POUNDS_PER_METRIC_TON;
+      }
+      if (item.formula === "sugar") {
+        return rawNumeric / fxNumeric / POUNDS_PER_METRIC_TON;
+      }
+      if (item.formula === "aluminium") {
+        return rawNumeric / fxNumeric;
+      }
+      if (item.formula === "soybean") {
+        return rawNumeric / fxNumeric * KILOGRAMS_PER_SOYBEAN_BUSHEL / KILOGRAMS_PER_METRIC_TON;
+      }
+      return null;
+    }
+
+    function computeSpreadWithValues(normalizedDomesticPrice, overseasPrice) {
+      const normalized = toFiniteNumber(normalizedDomesticPrice);
+      const overseas = toFiniteNumber(overseasPrice);
+      if (normalized === null || overseas === null) {
+        return { spread: null, spreadPct: null };
+      }
+      const denominator = normalized + overseas;
+      if (denominator === 0) {
+        return { spread: null, spreadPct: null };
+      }
+      const spread = normalized - overseas;
+      return { spread, spreadPct: spread * 2 / denominator };
+    }
+
+    function displayItem(item, health = null) {
+      if (!item) return item;
+      const fxRate = displayFxRate(health);
+      if (!customFxActive()) {
+        return {
+          ...item,
+          fx_display_rate: fxRate,
+          fx_display_source: item.fx_source,
+          fx_display_mode: item?.route_detail?.fx_is_frozen ? "冻结" : (item?.route_detail?.fx_is_live ? "实时" : "--"),
+        };
+      }
+      const normalizedLast = normalizeDomesticPriceWithFx(item.domestic_last_raw, item, fxRate);
+      const displaySpread = computeSpreadWithValues(normalizedLast, item.overseas_last);
+      return {
+        ...item,
+        normalized_last: normalizedLast,
+        spread: displaySpread.spread,
+        spread_pct: displaySpread.spreadPct,
+        fx_display_rate: fxRate,
+        fx_display_source: "网页自定义",
+        fx_display_mode: "固定",
+      };
+    }
+
+    function displayHistory(history, item, health = null) {
+      if (!customFxActive()) {
+        return history || [];
+      }
+      const fxRate = displayFxRate(health);
+      return (history || []).map((row) => {
+        const normalizedLast = normalizeDomesticPriceWithFx(row.domestic_last_raw, item, fxRate);
+        const displaySpread = computeSpreadWithValues(normalizedLast, row.overseas_last);
+        return {
+          ...row,
+          normalized_last: normalizedLast,
+          spread: displaySpread.spread,
+          spread_pct: displaySpread.spreadPct,
+          fx_rate: fxRate,
+        };
+      });
+    }
 
     function loadCardSelections() {
       try {
@@ -1149,7 +1291,7 @@
       return formatTableNumber(numeric, 0);
     }
 
-    function buildInstrumentRow(cardGroup, domesticPreference, overseasPreference) {
+    function buildInstrumentRow(cardGroup, domesticPreference, overseasPreference, health = null) {
       if (!cardGroup || !cardGroup.selected_item) {
         return "";
       }
@@ -1167,11 +1309,11 @@
           </td>
           <td class="numeric-cell"><div class="summary-lines">${buildVariantValueLines(cardGroup, (variant) => formatTableNumber(variant.domestic_last_raw, domesticPriceDigits(variant)))}</div></td>
           <td class="numeric-cell"><div class="summary-lines">${buildVariantValueLines(cardGroup, (variant) => formatDomesticLotNotional(variant))}</div></td>
-          <td class="numeric-cell"><div class="summary-lines">${buildVariantValueLines(cardGroup, (variant) => formatTableNumber(variant.normalized_last, 2))}</div></td>
+          <td class="numeric-cell"><div class="summary-lines">${buildVariantValueLines(cardGroup, (variant) => formatTableNumber(displayItem(variant, health).normalized_last, 2))}</div></td>
           <td class="numeric-cell"><div class="summary-lines">${buildVariantValueLines(cardGroup, (variant) => formatTableNumber(variant.overseas_last, 2))}</div></td>
           <td class="numeric-cell"><div class="summary-lines">${buildVariantValueLines(cardGroup, (variant) => formatHedgePosition(variant))}</div></td>
-          <td class="numeric-cell"><div class="summary-lines">${buildVariantValueLines(cardGroup, (variant) => formatTableSignedNumber(variant.spread, 2))}</div></td>
-          <td class="numeric-cell"><div class="summary-lines">${buildVariantValueLines(cardGroup, (variant) => formatTablePct(variant.spread_pct))}</div></td>
+          <td class="numeric-cell"><div class="summary-lines">${buildVariantValueLines(cardGroup, (variant) => formatTableSignedNumber(displayItem(variant, health).spread, 2))}</div></td>
+          <td class="numeric-cell"><div class="summary-lines">${buildVariantValueLines(cardGroup, (variant) => formatTablePct(displayItem(variant, health).spread_pct))}</div></td>
         </tr>
       `;
     }
@@ -1182,6 +1324,7 @@
           cardGroup,
           snapshot.domestic_route_preferences?.[cardGroup.selected_item.group_name],
           snapshot.overseas_route_preferences?.[cardGroup.selected_item.group_name],
+          snapshot.health,
         )
       ).filter(Boolean);
       document.getElementById("instrument-summary").innerHTML = rows.length
@@ -1404,7 +1547,6 @@
     }
 
     function buildInfoModule(item) {
-      const fxModeLabel = item?.route_detail?.fx_is_frozen ? "冻结" : (item?.route_detail?.fx_is_live ? "实时" : "--");
       const pauseLine = item.pause_reason
         ? `<div data-card-field="pause_reason_container">暂停原因：<strong data-card-field="pause_reason">${escapeHtml(item.pause_reason)}</strong></div>`
         : `<div data-card-field="pause_reason_container" hidden></div>`;
@@ -1415,7 +1557,7 @@
             <div>国内换算价：<strong data-card-field="normalized_last">${formatNumber(item.normalized_last, 4)}</strong> ${escapeHtml(item.target_unit)}</div>
             <div>海外最新价：<strong data-card-field="overseas_last">${formatNumber(item.overseas_last, 4)}</strong> ${escapeHtml(item.target_unit)}</div>
             <div>数据源：<strong data-card-field="domestic_source">${escapeHtml(sourceDisplayName(item.domestic_source))}</strong> / <strong data-card-field="overseas_source">${escapeHtml(sourceDisplayName(item.overseas_source))}</strong></div>
-            <div>汇率：<strong data-card-field="fx_source">${escapeHtml(sourceDisplayName(item.fx_source))}</strong> / <strong data-card-field="fx_mode">${escapeHtml(fxModeLabel)}</strong></div>
+            <div>汇率：<strong data-card-field="fx_rate">${formatNumber(item.fx_display_rate, 4)}</strong> / <strong data-card-field="fx_source">${escapeHtml(sourceDisplayName(item.fx_display_source))}</strong> / <strong data-card-field="fx_mode">${escapeHtml(item.fx_display_mode)}</strong></div>
             <div data-card-field="ages">时效：国内 <strong>${formatNumber(item.domestic_age_sec, 1)}s</strong> / 海外 <strong>${formatNumber(item.overseas_age_sec, 1)}s</strong> / 汇率 <strong>${formatNumber(item.fx_age_sec, 1)}s</strong></div>
             ${pauseLine}
           </div>
@@ -1423,9 +1565,10 @@
       `;
     }
 
-    function buildCard(cardGroup, domesticPreference, overseasPreference, history) {
-      const item = cardGroup.selected_item;
-      const selectedHistory = filterHistoryForSelection(history || [], domesticPreference);
+    function buildCard(cardGroup, domesticPreference, overseasPreference, history, health = null) {
+      const item = displayItem(cardGroup.selected_item, health);
+      const displayRows = displayHistory(history || [], cardGroup.selected_item, health);
+      const selectedHistory = filterHistoryForSelection(displayRows, domesticPreference);
       const filteredHistory = filterHistoryForTradingSessions(selectedHistory, item);
       const cardKey = cardGroup.card_key;
       const groupName = item.group_name;
@@ -1617,6 +1760,40 @@
       }
     }
 
+    function renderCardPayload(payload) {
+      const cardGroup = payload.card_group;
+      if (!cardGroup || !cardGroup.selected_item) {
+        return;
+      }
+      CARD_PAYLOAD_CACHE[cardGroup.card_key] = payload;
+      cardGroup.display_name = displayNameForGroup(cardGroup.card_key || cardGroup.selected_item.group_name);
+      const cardMarkup = buildCard(
+        cardGroup,
+        payload.domestic_route_preference,
+        payload.overseas_route_preference,
+        payload.history || [],
+        LAST_SNAPSHOT_PAYLOAD?.health,
+      );
+      const existingCard = document.getElementById(buildCardElementId(cardGroup.card_key));
+      if (existingCard) {
+        existingCard.outerHTML = cardMarkup;
+      } else {
+        document.getElementById("cards").innerHTML = cardMarkup;
+      }
+
+      const instrumentRowMarkup = buildInstrumentRow(
+        cardGroup,
+        payload.domestic_route_preference,
+        payload.overseas_route_preference,
+        LAST_SNAPSHOT_PAYLOAD?.health,
+      );
+      const existingInstrumentRow = document.getElementById(buildInstrumentRowId(cardGroup.card_key));
+      if (existingInstrumentRow) {
+        existingInstrumentRow.outerHTML = instrumentRowMarkup;
+      }
+      hydrateCardCharts(cardGroup.card_key);
+    }
+
     async function refreshCardGroup(groupName) {
       const cardKey = cardKeyForGroup(groupName);
       const rangeKey = selectedHistoryRange(cardKey);
@@ -1630,30 +1807,7 @@
           await load();
           return;
         }
-        cardGroup.display_name = displayNameForGroup(cardGroup.card_key || cardGroup.selected_item.group_name);
-        const cardMarkup = buildCard(
-          cardGroup,
-          payload.domestic_route_preference,
-          payload.overseas_route_preference,
-          payload.history || [],
-        );
-        const existingCard = document.getElementById(buildCardElementId(cardGroup.card_key));
-        if (existingCard) {
-          existingCard.outerHTML = cardMarkup;
-        } else {
-          document.getElementById("cards").innerHTML = cardMarkup;
-        }
-
-        const instrumentRowMarkup = buildInstrumentRow(
-          cardGroup,
-          payload.domestic_route_preference,
-          payload.overseas_route_preference,
-        );
-        const existingInstrumentRow = document.getElementById(buildInstrumentRowId(cardGroup.card_key));
-        if (existingInstrumentRow) {
-          existingInstrumentRow.outerHTML = instrumentRowMarkup;
-        }
-        hydrateCardCharts(cardGroup.card_key);
+        renderCardPayload(payload);
         refreshReplayRow(cardGroup).catch((error) => {
           const existingReplayRow = document.getElementById(buildReplayRowId(cardGroup.card_key));
           const message = `
@@ -1672,6 +1826,70 @@
         setCardBusy(cardKey, false);
         throw error;
       }
+    }
+
+    function buildMetaMarkup(snapshot) {
+      const liveFxRate = toFiniteNumber(snapshot?.health?.latest_fx_rate);
+      const appliedFxRate = displayFxRate(snapshot?.health);
+      return `
+        <span class="pill">最近刷新：${escapeHtml(formatDateTime(snapshot.as_of))}</span>
+        <span class="pill">轮询间隔：${snapshot.health.poll_interval_sec} 秒</span>
+        <span class="pill">实时美元兑人民币：${formatNumber(liveFxRate, 4)}</span>
+        <span class="pill">展示美元兑人民币：${formatNumber(appliedFxRate, 4)}</span>
+        <span class="pill">汇率源：${escapeHtml(customFxActive() ? "网页自定义" : sourceDisplayName(snapshot.health.latest_fx_source))}</span>
+        <span class="pill">汇率模式：${customFxActive() ? "固定" : (snapshot.health.fx_is_frozen ? "冻结" : (snapshot.health.fx_is_live ? "实时" : "--"))}</span>
+        <span class="pill">汇率跳变：${formatPct(snapshot.health.latest_fx_jump_pct)}</span>
+        <span class="pill">轮询轮次：${snapshot.health.total_cycles}</span>
+        <div class="fx-override-panel">
+          <div class="fx-override-head">
+            <strong>固定展示汇率</strong>
+            <span class="fx-override-status">${customFxActive() ? "已启用" : "未启用"}</span>
+          </div>
+          <form class="fx-override-form" onsubmit="handleCustomFxApply(event)">
+            <input id="custom-fx-rate-input" class="fx-override-input" type="number" min="0" step="0.0001" value="${escapeHtml(formatFxInputValue(appliedFxRate))}" />
+            <button type="submit" class="fx-override-button primary">应用</button>
+            <button type="button" class="fx-override-button" onclick="handleCustomFxReset()"${customFxActive() ? "" : " disabled"}>恢复实时</button>
+          </form>
+          <div class="fx-override-hint">只影响网页中的国内换算价、理论价差和价差百分比展示，不影响后台采集、数据库和告警。</div>
+        </div>
+      `;
+    }
+
+    function rerenderDashboardWithCurrentFx() {
+      if (!LAST_SNAPSHOT_PAYLOAD) {
+        return;
+      }
+      document.getElementById("meta").innerHTML = buildMetaMarkup(LAST_SNAPSHOT_PAYLOAD);
+      const cardGroups = buildCardGroups(LAST_SNAPSHOT_PAYLOAD.snapshots);
+      LAST_CARD_GROUPS = cardGroups;
+      renderInstrumentSummary(cardGroups, LAST_SNAPSHOT_PAYLOAD);
+      if (ACTIVE_CARD_GROUP_NAME) {
+        const summary = cardSummaryForGroup(cardGroups, ACTIVE_CARD_GROUP_NAME);
+        const cacheKey = summary?.cardGroup?.card_key || cardKeyForGroup(ACTIVE_CARD_GROUP_NAME);
+        const payload = CARD_PAYLOAD_CACHE[cacheKey];
+        if (payload) {
+          renderCardPayload(payload);
+        }
+      }
+    }
+
+    async function handleCustomFxApply(event) {
+      event?.preventDefault?.();
+      const input = document.getElementById("custom-fx-rate-input");
+      const numeric = toFiniteNumber(input?.value);
+      if (numeric === null || numeric <= 0) {
+        window.alert("请输入大于 0 的汇率，例如 7.2400");
+        return;
+      }
+      persistCustomFxRate(numeric);
+      rerenderDashboardWithCurrentFx();
+      await refreshActiveCardGroup();
+    }
+
+    async function handleCustomFxReset() {
+      persistCustomFxRate(null);
+      rerenderDashboardWithCurrentFx();
+      await refreshActiveCardGroup();
     }
 
     async function handleOpenCard(groupName) {
@@ -1755,16 +1973,8 @@
 
     async function load() {
       const snapshot = await fetchJson("/api/snapshot-summary");
-
-      document.getElementById("meta").innerHTML = `
-        <span class="pill">最近刷新：${escapeHtml(formatDateTime(snapshot.as_of))}</span>
-        <span class="pill">轮询间隔：${snapshot.health.poll_interval_sec} 秒</span>
-        <span class="pill">美元兑人民币：${formatNumber(snapshot.health.latest_fx_rate, 4)}</span>
-        <span class="pill">汇率源：${escapeHtml(sourceDisplayName(snapshot.health.latest_fx_source))}</span>
-        <span class="pill">汇率模式：${snapshot.health.fx_is_frozen ? "冻结" : (snapshot.health.fx_is_live ? "实时" : "--")}</span>
-        <span class="pill">汇率跳变：${formatPct(snapshot.health.latest_fx_jump_pct)}</span>
-        <span class="pill">轮询轮次：${snapshot.health.total_cycles}</span>
-      `;
+      LAST_SNAPSHOT_PAYLOAD = snapshot;
+      document.getElementById("meta").innerHTML = buildMetaMarkup(snapshot);
 
       const cardGroups = buildCardGroups(snapshot.snapshots);
       LAST_CARD_GROUPS = cardGroups;
@@ -1836,7 +2046,7 @@
         if (!card || !cardGroup.selected_item) {
           return;
         }
-        const item = cardGroup.selected_item;
+        const item = displayItem(cardGroup.selected_item, LAST_SNAPSHOT_PAYLOAD?.health);
         const statusBadge = card.querySelector('[data-card-field="status"]');
         if (statusBadge) {
           statusBadge.className = `status ${item.status}`;
@@ -1852,8 +2062,9 @@
         setCardField(card, "overseas_last", formatNumber(item.overseas_last, 4));
         setCardField(card, "domestic_source", sourceDisplayName(item.domestic_source));
         setCardField(card, "overseas_source", sourceDisplayName(item.overseas_source));
-        setCardField(card, "fx_source", sourceDisplayName(item.fx_source));
-        setCardField(card, "fx_mode", item?.route_detail?.fx_is_frozen ? "冻结" : (item?.route_detail?.fx_is_live ? "实时" : "--"));
+        setCardField(card, "fx_rate", formatNumber(item.fx_display_rate, 4));
+        setCardField(card, "fx_source", sourceDisplayName(item.fx_display_source));
+        setCardField(card, "fx_mode", item.fx_display_mode);
         setCardField(card, "ages", agesMarkup(item), { html: true });
         const pauseContainer = card.querySelector('[data-card-field="pause_reason_container"]');
         if (pauseContainer) {
@@ -1872,4 +2083,6 @@
     window.openZScoreReference = openZScoreReference;
     window.closeZScoreReference = closeZScoreReference;
     window.handleOpenCard = handleOpenCard;
+    window.handleCustomFxApply = handleCustomFxApply;
+    window.handleCustomFxReset = handleCustomFxReset;
   

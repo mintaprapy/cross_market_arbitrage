@@ -47,6 +47,7 @@
       display: flex;
       flex-wrap: wrap;
       gap: 10px;
+      align-items: center;
     }
     .pill {
       padding: 8px 12px;
@@ -55,6 +56,68 @@
       background: rgba(255, 255, 255, 0.04);
       color: var(--muted);
       font-size: 13px;
+    }
+    .fx-override-panel {
+      display: grid;
+      gap: 10px;
+      min-width: min(100%, 420px);
+      padding: 12px 14px;
+      border-radius: 18px;
+      border: 1px solid rgba(244, 211, 94, 0.22);
+      background: rgba(255, 255, 255, 0.035);
+    }
+    .fx-override-head {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .fx-override-head strong {
+      font-size: 13px;
+      letter-spacing: 0.04em;
+    }
+    .fx-override-status {
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .fx-override-form {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .fx-override-input {
+      width: 132px;
+      padding: 9px 10px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      background: rgba(5, 16, 25, 0.9);
+      color: var(--text);
+      font-size: 13px;
+      font-family: "SF Mono", Menlo, monospace;
+    }
+    .fx-override-button {
+      padding: 8px 12px;
+      border-radius: 999px;
+      border: 1px solid rgba(157, 201, 255, 0.16);
+      background: rgba(255, 255, 255, 0.03);
+      color: var(--text);
+      font-size: 12px;
+      cursor: pointer;
+    }
+    .fx-override-button.primary {
+      border-color: rgba(244, 211, 94, 0.34);
+      background: rgba(244, 211, 94, 0.14);
+    }
+    .fx-override-button:disabled {
+      opacity: 0.4;
+      cursor: default;
+    }
+    .fx-override-hint {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.5;
     }
     .grid {
       display: grid;
@@ -695,6 +758,7 @@
       .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .route-grid { grid-template-columns: 1fr; }
       .zscore-modal-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .fx-override-panel { min-width: 100%; }
       th:nth-child(4), td:nth-child(4) { display: none; }
     }
     @media (max-width: 560px) {

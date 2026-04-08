@@ -21,6 +21,7 @@ class TelegramChannel:
     timeout_sec: int
     timezone_name: str
     update_offset: int | None = None
+    commands_registered: bool = False
 
 
 class TelegramCommandService:
@@ -112,6 +113,7 @@ class TelegramCommandService:
 
     def _poll_channel_once(self, channel: TelegramChannel) -> None:
         http = HttpClient(timeout_sec=channel.timeout_sec)
+        self._ensure_commands_registered(http, channel)
         params: dict[str, str] = {}
         if channel.update_offset is not None:
             params["offset"] = str(channel.update_offset)
@@ -135,6 +137,21 @@ class TelegramCommandService:
             reply = self._handle_text(text)
             if reply:
                 self._send_message(http, channel, reply)
+
+    def _ensure_commands_registered(self, http: HttpClient, channel: TelegramChannel) -> None:
+        if channel.commands_registered:
+            return
+        commands = [
+            {"command": "help", "description": "查看帮助"},
+            {"command": "pairs", "description": "查看可查询交易对"},
+            {"command": "quote", "description": "查询指定交易对实时参数"},
+            {"command": "status", "description": "同 quote"},
+        ]
+        http.post_json(
+            f"{TELEGRAM_API_BASE}/bot{channel.bot_token}/setMyCommands",
+            {"commands": commands},
+        )
+        channel.commands_registered = True
 
     def _send_message(self, http: HttpClient, channel: TelegramChannel, text: str) -> None:
         http.post_json(

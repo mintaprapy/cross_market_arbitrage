@@ -170,11 +170,47 @@ class TelegramCommandServiceTests(unittest.TestCase):
         self.assertEqual(len(FakeHttpClient.instances), 1)
         http = FakeHttpClient.instances[0]
         self.assertEqual(service.channels[0].update_offset, 12)
-        self.assertEqual(len(http.post_requests), 1)
-        url, payload = http.post_requests[0]
+        self.assertEqual(len(http.post_requests), 2)
+        menu_url, menu_payload = http.post_requests[0]
+        self.assertIn("/bottoken/setMyCommands", menu_url)
+        self.assertEqual(
+            [item["command"] for item in menu_payload["commands"]],
+            ["help", "pairs", "quote", "status"],
+        )
+        url, payload = http.post_requests[1]
         self.assertIn("/bottoken/sendMessage", url)
         self.assertEqual(payload["chat_id"], "12345")
         self.assertIn("AU_XAU", payload["text"])
+
+    def test_registers_menu_only_once_per_channel(self) -> None:
+        FakeHttpClient.instances.clear()
+        FakeHttpClient.next_response = {"ok": True, "result": []}
+        notifier = NotifierConfig(
+            name="telegram_alerts",
+            kind="telegram",
+            enabled=True,
+            bot_token="token",
+            chat_id="12345",
+            timeout_sec=5,
+        )
+        context = build_context(
+            notifiers=[notifier],
+            enabled_group_names=["AU_XAU"],
+        )
+        service = TelegramCommandService(context, FakeQuery({}))
+
+        with mock.patch(
+            "cross_market_monitor.application.monitor.telegram_command_service.HttpClient",
+            FakeHttpClient,
+        ):
+            service._poll_channel_once(service.channels[0])
+            service._poll_channel_once(service.channels[0])
+
+        http_first = FakeHttpClient.instances[0]
+        http_second = FakeHttpClient.instances[1]
+        self.assertEqual(len(http_first.post_requests), 1)
+        self.assertIn("/bottoken/setMyCommands", http_first.post_requests[0][0])
+        self.assertEqual(len(http_second.post_requests), 0)
 
 
 if __name__ == "__main__":

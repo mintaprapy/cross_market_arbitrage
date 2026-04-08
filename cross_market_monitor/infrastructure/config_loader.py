@@ -10,6 +10,7 @@ from cross_market_monitor.domain.models import MonitorConfig
 def load_config(path: str | Path) -> MonitorConfig:
     config_path = Path(path).resolve()
     raw = _load_raw_config(config_path)
+    raw = _merge_pair_enabled(raw)
     raw = _merge_alert_thresholds(raw)
     raw = _merge_trading_calendar(raw, config_path)
     config = MonitorConfig.model_validate(raw)
@@ -124,6 +125,36 @@ def _merge_trading_calendar(raw: dict | None, config_path: Path) -> dict:
         app["domestic_non_trading_dates_local"] = deduped
 
     payload["app"] = app
+    return payload
+
+
+def _merge_pair_enabled(raw: dict | None) -> dict:
+    payload = dict(raw or {})
+    pair_enabled = payload.pop("pair_enabled", None)
+    if not pair_enabled:
+        return payload
+    if not isinstance(pair_enabled, dict):
+        raise ValueError("pair_enabled must be a mapping")
+
+    pairs = payload.get("pairs") or []
+    if not isinstance(pairs, list):
+        raise ValueError("pairs must be a list before merging pair_enabled")
+
+    pair_map: dict[str, dict] = {}
+    for item in pairs:
+        if isinstance(item, dict) and isinstance(item.get("group_name"), str):
+            pair_map[item["group_name"]] = item
+
+    for group_name, enabled in pair_enabled.items():
+        if not isinstance(group_name, str):
+            raise ValueError("pair_enabled keys must be group names")
+        if group_name not in pair_map:
+            raise ValueError(f"pair_enabled references unknown pair: {group_name}")
+        if not isinstance(enabled, bool):
+            raise ValueError(f"pair_enabled[{group_name}] must be a boolean")
+        pair_map[group_name]["enabled"] = enabled
+
+    payload["pairs"] = pairs
     return payload
 
 

@@ -179,6 +179,7 @@ cross_market_monitor/
 - `config/app.yaml`
 - `config/sources.yaml`
 - `config/pairs.yaml`
+- `config/pair_enabled.yaml`
 - `config/alert_thresholds.yaml`
 - `config/notifiers.yaml`
 - `config/local.yaml`
@@ -191,7 +192,7 @@ cp config/local.example.yaml config/local.yaml
 
 `config/local.yaml` 已加入 `.gitignore`，用于保留本地凭证、通知地址和运行参数，不会上传到 GitHub。
 
-配置现在拆成 6 份：
+配置现在拆成 7 份：
 
 - `config/monitor.yaml`
   只作为入口文件，列出 `imports`
@@ -201,12 +202,25 @@ cp config/local.example.yaml config/local.yaml
   负责各数据源和非敏感连接参数
 - `config/pairs.yaml`
   负责交易对、路由、成本模型和运行阈值
+- `config/pair_enabled.yaml`
+  只负责每个交易对是否启用
 - `config/alert_thresholds.yaml`
   只负责告警阈值，空值表示关闭对应通知
 - `config/notifiers.yaml`
   负责非敏感默认通知配置
 - `config/local.yaml`
   负责本地敏感凭证和通知渠道覆盖，比如 `TqSdk` 账号密码、飞书/Telegram/Webhook 连接信息
+
+启用或停用交易对，直接改这一份：
+
+```yaml
+pair_enabled:
+  AU_XAU: true
+  AL_ALUMINIUM: false
+  B_SOYBEAN: false
+```
+
+改完后重启对应服务即可生效。
 
 ## 运行
 

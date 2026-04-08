@@ -1,0 +1,12 @@
+pair_enabled:
+  AU_XAU: true
+  AG_XAG_GROSS: true
+  AG_XAG_NET: true
+  CU_COPPER_GROSS: true
+  CU_COPPER_NET: true
+  BC_COPPER: true
+  SC_CL: true
+  AL_ALUMINIUM: true
+  B_SOYBEAN: true
+  CF_COTTON: true
+  SR_SUGAR: true

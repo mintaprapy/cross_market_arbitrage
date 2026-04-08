@@ -1179,7 +1179,7 @@ class HistoryService:
             return
 
         range_key = self.context.config.app.startup_history_backfill_range_key
-        self.refresh_spread_windows_from_local_history()
+        await asyncio.to_thread(self.refresh_spread_windows_from_local_history)
         start_dt, end_dt = self.resolve_history_window(range_key=range_key)
         refreshed_after_backfill = False
         if not self.has_sufficient_fx_history(
@@ -1225,7 +1225,7 @@ class HistoryService:
                 )
                 refreshed_after_backfill = True
         if refreshed_after_backfill:
-            self.refresh_spread_windows_from_local_history()
+            await asyncio.to_thread(self.refresh_spread_windows_from_local_history)
 
     async def maybe_backfill_tqsdk_shadow_history(self) -> None:
         if not self.context.config.app.tqsdk_shadow_enabled or not self.context.config.app.tqsdk_startup_backfill_enabled:

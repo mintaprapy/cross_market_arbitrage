@@ -203,7 +203,7 @@ cp config/local.example.yaml config/local.yaml
 - `config/pairs.yaml`
   负责交易对、路由、成本模型和运行阈值
 - `config/pair_enabled.yaml`
-  只负责每个交易对是否启用
+  只负责每个交易对是否在网页/API 中展示，不影响后台采集
 - `config/alert_thresholds.yaml`
   只负责告警阈值，空值表示关闭对应通知
 - `config/notifiers.yaml`
@@ -211,7 +211,7 @@ cp config/local.example.yaml config/local.yaml
 - `config/local.yaml`
   负责本地敏感凭证和通知渠道覆盖，比如 `TqSdk` 账号密码、飞书/Telegram/Webhook 连接信息
 
-启用或停用交易对，直接改这一份：
+控制网页/API 是否展示某个交易对，直接改这一份：
 
 ```yaml
 pair_enabled:
@@ -220,7 +220,7 @@ pair_enabled:
   B_SOYBEAN: false
 ```
 
-改完后重启对应服务即可生效。
+改完后重启对应服务即可生效。后台采集仍然会继续保留这些交易对的数据。
 
 ## 运行
 

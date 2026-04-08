@@ -215,7 +215,7 @@
     };
 
     const CARD_DISPLAY_ORDER = ["AU_XAU", "AG_XAG", "CU_COPPER", "AL_ALUMINIUM", "BC_COPPER", "SC_CL", "B_SOYBEAN", "CF_COTTON", "SR_SUGAR"];
-    const HIDDEN_CARD_KEYS = new Set(["AL_ALUMINIUM", "B_SOYBEAN", "CF_COTTON", "SR_SUGAR"]);
+    const HIDDEN_CARD_KEYS = new Set();
 
     const CARD_SELECTION_STORAGE_KEY = "cross-market-card-selection-v5";
     const HISTORY_RANGE_STORAGE_KEY = "cross-market-history-range-v1";

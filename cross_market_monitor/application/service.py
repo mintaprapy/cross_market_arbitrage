@@ -119,6 +119,7 @@ class MonitorService:
         self._local_tz = self._resolve_timezone(config.app.timezone)
         self._pair_map = {pair.group_name: pair for pair in config.pairs}
         self._enabled_pairs = [pair for pair in config.pairs if pair.enabled]
+        self._dashboard_pairs = [pair for pair in self._enabled_pairs if pair.dashboard_enabled]
         self._preferred_domestic_symbols: dict[str, str] = {
             pair.group_name: pair.domestic_symbol for pair in self._enabled_pairs
         }
@@ -174,6 +175,7 @@ class MonitorService:
             local_tz=self._local_tz,
             pair_map=self._pair_map,
             enabled_pairs=self._enabled_pairs,
+            dashboard_pairs=self._dashboard_pairs,
             preferred_domestic_symbols=self._preferred_domestic_symbols,
             preferred_overseas_symbols=self._preferred_overseas_symbols,
         )
@@ -246,8 +248,8 @@ class MonitorService:
     async def shutdown(self) -> None:
         await self.runtime.shutdown()
 
-    async def poll_once(self):
-        return await self.poll_cycle.poll_once()
+    async def poll_once(self, pairs=None):
+        return await self.poll_cycle.poll_once(pairs=pairs)
 
     def get_health(self) -> dict:
         return self.query.get_health()

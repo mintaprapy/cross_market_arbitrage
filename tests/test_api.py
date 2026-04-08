@@ -83,6 +83,7 @@ class ApiTests(unittest.TestCase):
         service = mock.Mock()
         service.config.app.name = "API Test"
         service.config.app.poll_interval_sec = 10
+        service.context.dashboard_pairs = ["visible-pair"]
         service.poll_once = mock.AsyncMock()
         runtime = mock.Mock()
         runtime.start = mock.AsyncMock()
@@ -97,7 +98,7 @@ class ApiTests(unittest.TestCase):
 
             asyncio.run(run_case())
 
-        service.poll_once.assert_awaited_once_with()
+        service.poll_once.assert_awaited_once_with(pairs=["visible-pair"])
         runtime.start.assert_awaited_once_with(background_startup=True, initial_delay_sec=10)
         runtime.stop.assert_awaited_once_with()
 

@@ -152,7 +152,7 @@ def _merge_pair_enabled(raw: dict | None) -> dict:
             raise ValueError(f"pair_enabled references unknown pair: {group_name}")
         if not isinstance(enabled, bool):
             raise ValueError(f"pair_enabled[{group_name}] must be a boolean")
-        pair_map[group_name]["enabled"] = enabled
+        pair_map[group_name]["dashboard_enabled"] = enabled
 
     payload["pairs"] = pairs
     return payload

@@ -36,7 +36,7 @@ def create_app(service: MonitorService, *, run_runtime: bool = True) -> FastAPI:
         runtime = MonitorRuntime(service)
         initial_delay_sec = 0.0
         try:
-            await service.poll_once()
+            await service.poll_once(pairs=service.context.dashboard_pairs)
             initial_delay_sec = service.config.app.poll_interval_sec
         except Exception:  # pragma: no cover - startup guard
             LOGGER.exception("Initial poll during API startup failed")

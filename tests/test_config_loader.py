@@ -327,4 +327,5 @@ class ConfigLoaderTests(unittest.TestCase):
             config = load_config(config_dir / "monitor.yaml")
 
             self.assertEqual(len(config.pairs), 1)
-            self.assertFalse(config.pairs[0].enabled)
+            self.assertTrue(config.pairs[0].enabled)
+            self.assertFalse(config.pairs[0].dashboard_enabled)

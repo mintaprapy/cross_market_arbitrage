@@ -26,6 +26,7 @@ class ServiceContext:
     local_tz: Any
     pair_map: dict[str, PairConfig]
     enabled_pairs: list[PairConfig]
+    dashboard_pairs: list[PairConfig]
     preferred_domestic_symbols: dict[str, str]
     preferred_overseas_symbols: dict[str, str]
     started_at: datetime = field(default_factory=utc_now)

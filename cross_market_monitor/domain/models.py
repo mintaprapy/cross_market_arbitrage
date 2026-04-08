@@ -102,6 +102,7 @@ class PairConfig(BaseModel):
     target_unit: TargetUnit
     tax_mode: TaxMode = "gross"
     enabled: bool = True
+    dashboard_enabled: bool = True
     thresholds: ThresholdConfig = Field(default_factory=ThresholdConfig)
     costs: CostModelConfig = Field(default_factory=CostModelConfig)
     domestic_candidates: list[QuoteRouteConfig] = Field(default_factory=list)

@@ -20,8 +20,9 @@ class QueryService:
         self.route_preferences = route_preferences
         self.history = history
 
-    def _current_snapshots(self) -> dict[str, SpreadSnapshot]:
-        enabled_group_names = {pair.group_name for pair in self.context.enabled_pairs}
+    def _current_snapshots(self, pairs: list | None = None) -> dict[str, SpreadSnapshot]:
+        target_pairs = pairs or self.context.dashboard_pairs
+        enabled_group_names = {pair.group_name for pair in target_pairs}
         if self.context.is_polling:
             return {
                 group_name: snapshot
@@ -126,7 +127,7 @@ class QueryService:
         return payload
 
     def get_health(self) -> dict:
-        snapshots = self._current_snapshots()
+        snapshots = self._current_snapshots(self.context.dashboard_pairs)
         runtime_state = self._current_runtime_state(snapshots)
         health = RuntimeHealth(
             started_at=runtime_state.started_at,
@@ -152,7 +153,7 @@ class QueryService:
                 "status": snapshots.get(pair.group_name).status if pair.group_name in snapshots else "waiting",
             }
             for pair in self.context.config.pairs
-            if pair.enabled
+            if pair.enabled and pair.dashboard_enabled
         ]
         health["sources"] = [
             {
@@ -167,7 +168,7 @@ class QueryService:
         return health
 
     def get_snapshot_summary(self) -> dict:
-        snapshots = self._current_snapshots()
+        snapshots = self._current_snapshots(self.context.dashboard_pairs)
         return {
             "as_of": self._current_last_poll_finished_at(snapshots),
             "health": self.get_health(),
@@ -183,7 +184,7 @@ class QueryService:
         }
 
     def get_snapshot_row(self, group_name: str) -> dict | None:
-        snapshots = self._current_snapshots()
+        snapshots = self._current_snapshots(self.context.enabled_pairs)
         snapshot = snapshots.get(group_name)
         if snapshot is None:
             return None
@@ -193,11 +194,11 @@ class QueryService:
         summary = self.get_snapshot_summary()
         domestic_preferences = {
             pair.group_name: self.route_preferences.get_domestic_route_options(pair.group_name, refresh_dynamic=False)
-            for pair in self.context.enabled_pairs
+            for pair in self.context.dashboard_pairs
         }
         overseas_preferences = {
             pair.group_name: self.route_preferences.get_overseas_route_options(pair.group_name)
-            for pair in self.context.enabled_pairs
+            for pair in self.context.dashboard_pairs
         }
         payload = {
             **summary,
@@ -215,11 +216,11 @@ class QueryService:
                 limit=self.context.history_preview_limit,
                 range_key=self.context.default_history_range_key,
             )
-            for pair in self.context.enabled_pairs
+            for pair in self.context.dashboard_pairs
         }
         payload["shadow_comparisons"] = {
             pair.group_name: self.history.get_shadow_comparison(pair.group_name, limit=120)
-            for pair in self.context.enabled_pairs
+            for pair in self.context.dashboard_pairs
         }
         return payload
 
@@ -230,7 +231,7 @@ class QueryService:
         *,
         include_replay: bool = False,
     ) -> dict:
-        snapshots = self._current_snapshots()
+        snapshots = self._current_snapshots(self.context.dashboard_pairs)
         linked_groups = self.route_preferences.linked_variant_groups(group_name)
         selected_group = group_name if group_name in linked_groups else linked_groups[0]
         domestic_preference = self.route_preferences.get_domestic_route_options(selected_group, refresh_dynamic=False)

@@ -6,7 +6,7 @@ pair_enabled:
   CU_COPPER_NET: true
   BC_COPPER: true
   SC_CL: true
-  AL_ALUMINIUM: true
-  B_SOYBEAN: true
-  CF_COTTON: true
-  SR_SUGAR: true
+  AL_ALUMINIUM: false
+  B_SOYBEAN: false
+  CF_COTTON: false
+  SR_SUGAR: false

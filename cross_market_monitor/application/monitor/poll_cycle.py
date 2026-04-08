@@ -20,7 +20,7 @@ class PollCycleService:
         self.fx_service = fx_service
         self.snapshot_builder = snapshot_builder
 
-    async def poll_once(self) -> list[SpreadSnapshot]:
+    async def poll_once(self, pairs=None) -> list[SpreadSnapshot]:
         if self.context.is_polling:
             return list(self.context.latest_snapshots.values())
 
@@ -38,10 +38,14 @@ class PollCycleService:
                     timezone_name=self.context.config.app.timezone,
                 )
 
-            tasks = [
-                self.snapshot_builder.build_snapshot(pair, fx_context)
+            target_pairs = pairs or [
+                pair
                 for pair in self.context.config.pairs
                 if pair.enabled
+            ]
+            tasks = [
+                self.snapshot_builder.build_snapshot(pair, fx_context)
+                for pair in target_pairs
             ]
             snapshots = await asyncio.gather(*tasks)
             self.context.last_poll_finished_at = utc_now()

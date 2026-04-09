@@ -16,6 +16,7 @@ app:
   export_dir: exports
   fx_window_size: 60
   replay_target_daily_vol_pct: 0.015
+  replay_bucket_minutes: 15
   startup_history_backfill_enabled: true
   startup_history_backfill_range_key: 30d
   tqsdk_shadow_source: null

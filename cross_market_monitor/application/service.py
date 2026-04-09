@@ -161,6 +161,7 @@ class MonitorService:
             repository,
             self._enabled_pairs,
             target_daily_vol_pct=config.app.replay_target_daily_vol_pct,
+            bucket_minutes=config.app.replay_bucket_minutes,
         )
 
         self.context = ServiceContext(

@@ -15,10 +15,12 @@ class ReplayAnalyzer:
         pairs: list[PairConfig],
         *,
         target_daily_vol_pct: float = 0.015,
+        bucket_minutes: int = 15,
     ) -> None:
         self.repository = repository
         self.pairs = {pair.group_name: pair for pair in pairs}
         self.target_daily_vol_pct = target_daily_vol_pct
+        self.bucket_minutes = max(int(bucket_minutes), 1)
 
     def analyze(
         self,
@@ -37,6 +39,7 @@ class ReplayAnalyzer:
             start_ts=start_ts,
             end_ts=end_ts,
         )
+        rows = _bucket_rows(rows, self.bucket_minutes)
         if not rows:
             return ReplayReport(group_name=group_name, sample_count=0).model_dump(mode="json")
 
@@ -291,6 +294,24 @@ def _percentile_rank(values: list[float], current: float | None) -> float | None
 
 def _parse_iso(value: str) -> datetime:
     return datetime.fromisoformat(value)
+
+
+def _bucket_rows(rows: list[dict], bucket_minutes: int) -> list[dict]:
+    if bucket_minutes <= 1 or len(rows) < 2:
+        return rows
+    by_bucket: dict[datetime, dict] = {}
+    for row in rows:
+        ts_value = row.get("ts_local") or row.get("ts")
+        if not ts_value:
+            continue
+        dt = _parse_iso(ts_value)
+        bucket_start = dt.replace(
+            minute=(dt.minute // bucket_minutes) * bucket_minutes,
+            second=0,
+            microsecond=0,
+        )
+        by_bucket[bucket_start] = row
+    return [by_bucket[key] for key in sorted(by_bucket)]
 
 
 def _value_breaches_thresholds(

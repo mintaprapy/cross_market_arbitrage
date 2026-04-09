@@ -35,7 +35,7 @@ class ReplayAnalyzerTests(unittest.TestCase):
             for index, spread in enumerate(spreads):
                 repository.insert_snapshot(
                     SpreadSnapshot(
-                        ts=base + timedelta(minutes=index),
+                        ts=base + timedelta(minutes=index * 15),
                         group_name="AU_XAU",
                         domestic_symbol="AU",
                         overseas_symbol="XAU",
@@ -69,6 +69,58 @@ class ReplayAnalyzerTests(unittest.TestCase):
             self.assertEqual(len(report["signal_entries"]), 4)
             self.assertIsNotNone(report["average_round_trip_cost"])
             self.assertIsNotNone(report["realized_daily_vol_pct"])
+
+    def test_replay_report_uses_latest_snapshot_per_15m_bucket(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repository = SQLiteRepository(f"{tmp_dir}/monitor.db")
+            pair = PairConfig(
+                group_name="AU_XAU",
+                domestic_source="domestic",
+                domestic_symbol="AU",
+                domestic_label="AU",
+                overseas_source="overseas",
+                overseas_symbol="XAU",
+                overseas_label="XAU",
+                formula="gold",
+                domestic_unit="CNY_PER_GRAM",
+                target_unit="USD_PER_OUNCE",
+            )
+
+            base = datetime(2026, 3, 13, 0, 0, tzinfo=UTC)
+            rows = [
+                (0, 0.010, 1.0),
+                (5, 0.020, 2.0),
+                (10, 0.030, 3.0),
+                (17, 0.040, 4.0),
+            ]
+            for minute, spread_pct, spread in rows:
+                repository.insert_snapshot(
+                    SpreadSnapshot(
+                        ts=base + timedelta(minutes=minute),
+                        group_name="AU_XAU",
+                        domestic_symbol="AU",
+                        overseas_symbol="XAU",
+                        fx_source="fx",
+                        fx_rate=6.9,
+                        formula="gold",
+                        formula_version="v1",
+                        tax_mode="gross",
+                        target_unit="USD_PER_OUNCE",
+                        status="ok",
+                        normalized_last=100.0,
+                        overseas_last=100.0 + spread,
+                        spread=spread,
+                        spread_pct=spread_pct,
+                        zscore=spread,
+                    )
+                )
+
+            analyzer = ReplayAnalyzer(repository, [pair], bucket_minutes=15)
+            report = analyzer.analyze("AU_XAU", limit=100)
+
+            self.assertEqual(report["sample_count"], 2)
+            self.assertAlmostEqual(report["latest_spread_pct"], 0.040)
+            self.assertAlmostEqual(report["spread_pct_mean"], 0.035)
 
 
 if __name__ == "__main__":

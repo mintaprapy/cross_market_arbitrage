@@ -184,7 +184,7 @@
       open_er_api_fx: "Open ER 汇率",
       okx_swap: "OKX 永续",
       shfe_delaymarket: "上期所/能源中心延时",
-      sina_fx: "新浪外汇",
+      sina_fx: "新浪",
       sina_futures: "新浪期货",
       tqsdk_main: "TqSdk 主连",
     };
@@ -355,7 +355,7 @@
         spread: displaySpread.spread,
         spread_pct: displaySpread.spreadPct,
         fx_display_rate: fxRate,
-        fx_display_source: "网页自定义",
+        fx_display_source: "自定",
         fx_display_mode: "固定",
       };
     }
@@ -604,7 +604,7 @@
 
     function sourceDisplayName(value) {
       if (!value) return "--";
-      if (value.includes("sina_fx")) return "新浪外汇";
+      if (value.includes("sina_fx")) return "新浪";
       if (value.includes("sina")) return "新浪期货";
       if (value.includes("tqsdk")) return "TqSdk 主连";
       if (value.includes("binance")) return "Binance 永续";
@@ -1732,6 +1732,15 @@
       `;
     }
 
+    function buildReplayErrorRow(cardGroup, message) {
+      return `
+        <tr id="${buildReplayRowId(cardGroup.card_key)}">
+          <td>${escapeHtml(cardGroup.display_name || displayNameForGroup(cardGroup.card_key || cardGroup.selected_item.group_name))}</td>
+          <td colspan="6" class="muted">${escapeHtml(message)}</td>
+        </tr>
+      `;
+    }
+
     async function buildReplayRow(cardGroup) {
       if (!cardGroup || !cardGroup.selected_item) {
         return "";
@@ -1751,6 +1760,38 @@
       } else {
         document.getElementById("replay").innerHTML = replayMarkup;
       }
+    }
+
+    function renderReplayRowsLoading(cardGroups) {
+      const groups = (cardGroups || []).filter((cardGroup) => cardGroup?.selected_item);
+      if (!groups.length) {
+        renderReplayPlaceholder();
+        return;
+      }
+      document.getElementById("replay").innerHTML = groups.map((cardGroup) => buildReplayLoadingRow(cardGroup)).join("");
+    }
+
+    async function refreshReplayRows(cardGroups) {
+      const groups = (cardGroups || []).filter((cardGroup) => cardGroup?.selected_item);
+      if (!groups.length) {
+        renderReplayPlaceholder();
+        return;
+      }
+      await Promise.allSettled(
+        groups.map(async (cardGroup) => {
+          try {
+            await refreshReplayRow(cardGroup);
+          } catch (error) {
+            const existingReplayRow = document.getElementById(buildReplayRowId(cardGroup.card_key));
+            const message = buildReplayErrorRow(cardGroup, `回放研究加载失败：${error.message}`);
+            if (existingReplayRow) {
+              existingReplayRow.outerHTML = message;
+            } else {
+              document.getElementById("replay").insertAdjacentHTML("beforeend", message);
+            }
+          }
+        })
+      );
     }
 
     function setCardBusy(cardKey, busy) {
@@ -1832,25 +1873,21 @@
       const liveFxRate = toFiniteNumber(snapshot?.health?.latest_fx_rate);
       const appliedFxRate = displayFxRate(snapshot?.health);
       return `
-        <span class="pill">最近刷新：${escapeHtml(formatDateTime(snapshot.as_of))}</span>
-        <span class="pill">轮询间隔：${snapshot.health.poll_interval_sec} 秒</span>
-        <span class="pill">实时美元兑人民币：${formatNumber(liveFxRate, 4)}</span>
-        <span class="pill">展示美元兑人民币：${formatNumber(appliedFxRate, 4)}</span>
-        <span class="pill">汇率源：${escapeHtml(customFxActive() ? "网页自定义" : sourceDisplayName(snapshot.health.latest_fx_source))}</span>
+        <span class="pill">${escapeHtml(formatDateTime(snapshot.as_of))} | ${snapshot.health.poll_interval_sec} 秒</span>
+        <span class="pill">实时汇率：${formatNumber(liveFxRate, 4)}</span>
+        <span class="pill">自定汇率：${formatNumber(appliedFxRate, 4)}</span>
+        <span class="pill">汇率源：${escapeHtml(customFxActive() ? "自定" : sourceDisplayName(snapshot.health.latest_fx_source))}</span>
         <span class="pill">汇率模式：${customFxActive() ? "固定" : (snapshot.health.fx_is_frozen ? "冻结" : (snapshot.health.fx_is_live ? "实时" : "--"))}</span>
-        <span class="pill">汇率跳变：${formatPct(snapshot.health.latest_fx_jump_pct)}</span>
-        <span class="pill">轮询轮次：${snapshot.health.total_cycles}</span>
         <div class="fx-override-panel">
           <div class="fx-override-head">
-            <strong>固定展示汇率</strong>
-            <span class="fx-override-status">${customFxActive() ? "已启用" : "未启用"}</span>
+            <strong>自定汇率</strong>
+            <span class="fx-override-status">${customFxActive() ? "启用" : "未启"}</span>
           </div>
           <form class="fx-override-form" onsubmit="handleCustomFxApply(event)">
             <input id="custom-fx-rate-input" class="fx-override-input" type="number" min="0" step="0.0001" value="${escapeHtml(formatFxInputValue(appliedFxRate))}" />
             <button type="submit" class="fx-override-button primary">应用</button>
-            <button type="button" class="fx-override-button" onclick="handleCustomFxReset()"${customFxActive() ? "" : " disabled"}>恢复实时</button>
+            <button type="button" class="fx-override-button" onclick="handleCustomFxReset()"${customFxActive() ? "" : " disabled"}>恢复</button>
           </form>
-          <div class="fx-override-hint">只影响网页中的国内换算价、理论价差和价差百分比展示，不影响后台采集、数据库和告警。</div>
         </div>
       `;
     }
@@ -1901,10 +1938,8 @@
           summary.cardGroup.selected_item.group_name,
           summary.item.status,
         );
-        document.getElementById("replay").innerHTML = buildReplayLoadingRow(summary.cardGroup);
       } else {
         renderCardsPlaceholder("正在加载选中标的的详情图表...");
-        renderReplayPlaceholder("正在加载对应回放研究...");
       }
       updateInstrumentActiveRows();
       ACTIVE_CARD_REFRESH_IN_FLIGHT = true;
@@ -1912,7 +1947,6 @@
         await refreshCardGroup(groupName);
       } catch (error) {
         renderCardsPlaceholder(`加载详情失败：${error.message}`);
-        renderReplayPlaceholder("对应回放研究加载失败。");
       } finally {
         ACTIVE_CARD_REFRESH_IN_FLIGHT = false;
       }
@@ -1982,17 +2016,18 @@
 
       if (!DASHBOARD_BOOTSTRAPPED) {
         renderCardsPlaceholder();
-        renderReplayPlaceholder();
+        renderReplayRowsLoading(cardGroups);
         DASHBOARD_BOOTSTRAPPED = true;
       } else {
         if (ACTIVE_CARD_GROUP_NAME && !cardSummaryForGroup(cardGroups, ACTIVE_CARD_GROUP_NAME)) {
           ACTIVE_CARD_GROUP_NAME = null;
           renderCardsPlaceholder();
-          renderReplayPlaceholder();
         }
         applySnapshotSummaryToCards(cardGroups);
         await refreshActiveCardGroup();
       }
+
+      refreshReplayRows(cardGroups).catch(() => {});
 
       document.getElementById("sources").innerHTML = (snapshot.health.sources || []).map((item) => `
         <tr>
@@ -2083,6 +2118,10 @@
     window.openZScoreReference = openZScoreReference;
     window.closeZScoreReference = closeZScoreReference;
     window.handleOpenCard = handleOpenCard;
+    window.handleHistoryRangeChange = handleHistoryRangeChange;
+    window.handleOverseasRouteChange = handleOverseasRouteChange;
+    window.handleVariantChange = handleVariantChange;
+    window.handleSeriesVisibilityToggle = handleSeriesVisibilityToggle;
     window.handleCustomFxApply = handleCustomFxApply;
     window.handleCustomFxReset = handleCustomFxReset;
   

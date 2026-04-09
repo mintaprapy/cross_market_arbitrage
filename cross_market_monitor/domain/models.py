@@ -158,6 +158,7 @@ class AppConfig(BaseModel):
     export_dir: str = "exports"
     fx_window_size: int = 60
     replay_target_daily_vol_pct: float = 0.015
+    replay_bucket_minutes: int = 15
     startup_history_backfill_enabled: bool = True
     startup_history_backfill_range_key: Literal["24h", "7d", "30d", "90d", "1y", "all"] = "30d"
     tqsdk_shadow_source: str | None = None

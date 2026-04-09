@@ -741,7 +741,7 @@
           : `color:${item.color}; border-top-style:solid; border-top-color:${item.color};`;
         const isVisible = context ? isSeriesVisible(context.cardKey, context.chartKind, item.name) : true;
         const clickAttrs = context
-          ? `type="button" onclick="handleSeriesVisibilityToggle('${escapeHtml(context.cardKey)}', '${escapeHtml(context.groupName)}', '${escapeHtml(context.chartKind)}', '${escapeHtml(item.name)}')"`
+          ? `type="button" data-action="toggle-series" data-card-key="${escapeHtml(context.cardKey)}" data-group-name="${escapeHtml(context.groupName)}" data-chart-kind="${escapeHtml(context.chartKind)}" data-series-name="${escapeHtml(item.name)}"`
           : "";
         return `
           <button class="legend-item${context ? " legend-button" : ""}${isVisible ? "" : " inactive"}" ${clickAttrs}>
@@ -831,30 +831,45 @@
       });
     }
 
+    function handleChartHoverMove(cardKey, chart, clientX) {
+      const svg = document.getElementById(chart.svgId);
+      if (!svg) {
+        return;
+      }
+      const rect = svg.getBoundingClientRect();
+      if (!rect.width || !rect.height) {
+        return;
+      }
+      const usableWidth = chart.width - chart.padding.left - chart.padding.right;
+      const relativeX = ((clientX - rect.left) / rect.width) * chart.width;
+      const clampedX = Math.max(chart.padding.left, Math.min(chart.width - chart.padding.right, relativeX));
+      const ratio = usableWidth <= 0 ? 0 : (clampedX - chart.padding.left) / usableWidth;
+      const index = chart.timestamps.length <= 1 ? 0 : Math.round(ratio * (chart.timestamps.length - 1));
+      updateCardHover(cardKey, index);
+    }
+
     function hydrateCardCharts(cardKey) {
       const state = CARD_CHART_STATE[cardKey];
       if (!state || !state.timestamps || !state.timestamps.length) {
         return;
       }
       Object.values(state.charts || {}).forEach((chart) => {
+        const frame = document.getElementById(chart.frameId);
         const svg = document.getElementById(chart.svgId);
-        if (!svg || svg.dataset.bound === "1") {
+        if (!frame || !svg || frame.dataset.bound === "1") {
           return;
         }
-        svg.dataset.bound = "1";
-        svg.addEventListener("mousemove", (event) => {
-          const rect = svg.getBoundingClientRect();
-          if (!rect.width || !rect.height) {
-            return;
-          }
-          const usableWidth = chart.width - chart.padding.left - chart.padding.right;
-          const relativeX = ((event.clientX - rect.left) / rect.width) * chart.width;
-          const clampedX = Math.max(chart.padding.left, Math.min(chart.width - chart.padding.right, relativeX));
-          const ratio = usableWidth <= 0 ? 0 : (clampedX - chart.padding.left) / usableWidth;
-          const index = state.timestamps.length <= 1 ? 0 : Math.round(ratio * (state.timestamps.length - 1));
-          updateCardHover(cardKey, index);
-        });
-        svg.addEventListener("mouseleave", () => clearCardHover(cardKey));
+        frame.dataset.bound = "1";
+        const onMove = (event) => handleChartHoverMove(cardKey, chart, event.clientX);
+        const onLeave = () => clearCardHover(cardKey);
+        frame.addEventListener("pointermove", onMove);
+        frame.addEventListener("mousemove", onMove);
+        frame.addEventListener("pointerleave", onLeave);
+        frame.addEventListener("mouseleave", onLeave);
+        svg.addEventListener("pointermove", onMove);
+        svg.addEventListener("mousemove", onMove);
+        svg.addEventListener("pointerleave", onLeave);
+        svg.addEventListener("mouseleave", onLeave);
       });
       clearCardHover(cardKey);
     }
@@ -1193,7 +1208,10 @@
           <button
             type="button"
             class="time-filter-button${active}"
-            onclick="handleHistoryRangeChange('${escapeHtml(cardKey)}', '${escapeHtml(groupName)}', '${escapeHtml(option.key)}')"
+            data-action="history-range"
+            data-card-key="${escapeHtml(cardKey)}"
+            data-group-name="${escapeHtml(groupName)}"
+            data-range-key="${escapeHtml(option.key)}"
           >
             ${escapeHtml(option.label)}
           </button>
@@ -1300,7 +1318,7 @@
       const overseasLabel = overseasPreference?.selected_label || item.overseas_label || item.overseas_symbol || "--";
       const activeClass = cardKeyForGroup(ACTIVE_CARD_GROUP_NAME || "") === cardGroup.card_key ? " active" : "";
       return `
-        <tr id="${buildInstrumentRowId(cardGroup.card_key)}" class="summary-row summary-row-clickable${activeClass}" data-card-key="${escapeHtml(cardGroup.card_key)}" onclick="handleOpenCard('${escapeHtml(item.group_name)}')">
+        <tr id="${buildInstrumentRowId(cardGroup.card_key)}" class="summary-row summary-row-clickable${activeClass}" data-card-key="${escapeHtml(cardGroup.card_key)}" data-action="open-card" data-group-name="${escapeHtml(item.group_name)}">
           <td>
             <button type="button" class="summary-link summary-link-button">
               <strong>${escapeHtml(cardGroup.display_name || displayNameForGroup(item.group_name))}</strong>
@@ -1368,7 +1386,9 @@
           <button
             type="button"
             class="segment-button${active}"
-            onclick="handleVariantChange('${escapeHtml(cardGroup.card_key)}', '${escapeHtml(item.group_name)}')"
+            data-action="variant-change"
+            data-card-key="${escapeHtml(cardGroup.card_key)}"
+            data-group-name="${escapeHtml(item.group_name)}"
           >
             <span class="segment-check" aria-hidden="true"></span>
             ${escapeHtml(taxModeForGroup(item.group_name))}
@@ -1400,7 +1420,7 @@
             ${headerAddon}
           </div>
           <strong>${escapeHtml(selectedText)}</strong>
-          <select onchange="${endpoint}('${escapeHtml(groupName)}', this.value)">
+          <select data-action="${endpoint === "handleOverseasRouteChange" ? "overseas-route-change" : "select-change"}" data-group-name="${escapeHtml(groupName)}">
             ${options}
           </select>
         </div>
@@ -1666,7 +1686,7 @@
               <strong data-card-field="spread_pct">${formatPct(item.spread_pct)}</strong>
             </div>
             <div class="metric">
-              <button type="button" class="metric-trigger" onclick="openZScoreReference('${escapeHtml(cardGroup.card_key)}')">Z-Score</button>
+              <button type="button" class="metric-trigger" data-action="open-zscore" data-card-key="${escapeHtml(cardGroup.card_key)}">Z-Score</button>
               <div class="metric-inline-row">
                 <strong data-card-field="zscore">${formatNumber(item.zscore, 2)}</strong>
                 <span class="metric-inline-note" data-card-field="zscore_probability">${escapeHtml(formatRightTailProbabilityLabel(item.zscore))}</span>
@@ -1883,10 +1903,10 @@
             <strong>自定汇率</strong>
             <span class="fx-override-status">${customFxActive() ? "启用" : "未启"}</span>
           </div>
-          <form class="fx-override-form" onsubmit="handleCustomFxApply(event)">
+          <form class="fx-override-form" data-action="custom-fx-apply">
             <input id="custom-fx-rate-input" class="fx-override-input" type="number" min="0" step="0.0001" value="${escapeHtml(formatFxInputValue(appliedFxRate))}" />
             <button type="submit" class="fx-override-button primary">应用</button>
-            <button type="button" class="fx-override-button" onclick="handleCustomFxReset()"${customFxActive() ? "" : " disabled"}>恢复</button>
+            <button type="button" class="fx-override-button" data-action="custom-fx-reset"${customFxActive() ? "" : " disabled"}>恢复</button>
           </form>
         </div>
       `;
@@ -2113,6 +2133,67 @@
       if (event.key === "Escape") {
         closeZScoreReference();
       }
+    });
+
+    document.addEventListener("click", (event) => {
+      const actionTarget = event.target.closest("[data-action]");
+      if (!actionTarget) {
+        return;
+      }
+      const { action } = actionTarget.dataset;
+      if (!action) {
+        return;
+      }
+      if (action === "open-card") {
+        handleOpenCard(actionTarget.dataset.groupName);
+        return;
+      }
+      if (action === "history-range") {
+        handleHistoryRangeChange(
+          actionTarget.dataset.cardKey,
+          actionTarget.dataset.groupName,
+          actionTarget.dataset.rangeKey,
+        );
+        return;
+      }
+      if (action === "variant-change") {
+        handleVariantChange(actionTarget.dataset.cardKey, actionTarget.dataset.groupName);
+        return;
+      }
+      if (action === "toggle-series") {
+        handleSeriesVisibilityToggle(
+          actionTarget.dataset.cardKey,
+          actionTarget.dataset.groupName,
+          actionTarget.dataset.chartKind,
+          actionTarget.dataset.seriesName,
+        );
+        return;
+      }
+      if (action === "open-zscore") {
+        openZScoreReference(actionTarget.dataset.cardKey);
+        return;
+      }
+      if (action === "custom-fx-reset") {
+        handleCustomFxReset();
+      }
+    });
+
+    document.addEventListener("change", (event) => {
+      const actionTarget = event.target.closest("[data-action]");
+      if (!actionTarget) {
+        return;
+      }
+      if (actionTarget.dataset.action === "overseas-route-change") {
+        handleOverseasRouteChange(actionTarget.dataset.groupName, actionTarget.value);
+      }
+    });
+
+    document.addEventListener("submit", (event) => {
+      const form = event.target.closest('form[data-action="custom-fx-apply"]');
+      if (!form) {
+        return;
+      }
+      handleCustomFxApply(event);
     });
 
     window.openZScoreReference = openZScoreReference;

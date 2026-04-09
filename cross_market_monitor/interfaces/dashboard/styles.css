@@ -516,6 +516,7 @@
       border: 1px solid rgba(157, 201, 255, 0.12);
       overflow: hidden;
       padding: 8px;
+      cursor: crosshair;
     }
     .chart-frame.compact {
       min-height: 220px;

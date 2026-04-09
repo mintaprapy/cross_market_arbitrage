@@ -27,6 +27,10 @@ app:
   tqsdk_startup_backfill_range_key: 30d
   retention_enabled: true
   retention_interval_sec: 21600
+  timeseries_realtime_days: 1
+  timeseries_daily_after_days: 365
+  timeseries_intraday_bucket_minutes: 15
+  timeseries_archive_bucket_days: 1
   raw_quote_retention_days: 30
   fx_rate_retention_days: 30
   normalized_quote_retention_days: 30

@@ -417,6 +417,62 @@ class SQLiteStateRepoMixin:
             )
         return int(cursor.rowcount)
 
+    def compact_rows_by_bucket(
+        self,
+        table_name: str,
+        *,
+        bucket_seconds: int,
+        start_ts: str | None = None,
+        end_ts: str | None = None,
+    ) -> int:
+        table_specs = {
+            "raw_quotes": ("group_name", "leg_type", "source_name", "symbol"),
+            "fx_rates": ("source_name", "pair"),
+            "normalized_domestic_quotes": ("group_name", "source_name", "symbol", "tax_mode", "target_unit"),
+            "spread_snapshots": ("group_name", "domestic_symbol", "overseas_symbol", "tax_mode"),
+        }
+        partition_columns = table_specs.get(table_name)
+        if partition_columns is None:
+            raise ValueError(f"Unsupported compaction target: {table_name}")
+
+        bucket_seconds = max(int(bucket_seconds), 1)
+        clauses: list[str] = []
+        params: list[object] = []
+        if start_ts is not None:
+            clauses.append("ts >= ?")
+            params.append(start_ts)
+        if end_ts is not None:
+            clauses.append("ts < ?")
+            params.append(end_ts)
+        where_sql = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        partition_sql = ", ".join(
+            [*partition_columns, f"CAST(strftime('%s', ts) AS INTEGER) / {bucket_seconds}"]
+        )
+
+        query = f"""
+            WITH ranked AS (
+                SELECT
+                    id,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY {partition_sql}
+                        ORDER BY ts DESC, id DESC
+                    ) AS row_number
+                FROM {table_name}
+                {where_sql}
+            )
+            DELETE FROM {table_name}
+            WHERE id IN (
+                SELECT id
+                FROM ranked
+                WHERE row_number > 1
+            )
+        """
+        with self._lock, self._connect() as connection:
+            before_changes = connection.total_changes
+            connection.execute(query, tuple(params))
+            after_changes = connection.total_changes
+        return int(after_changes - before_changes)
+
     def checkpoint_wal(self) -> None:
         with self._lock, self._connect() as connection:
             connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")

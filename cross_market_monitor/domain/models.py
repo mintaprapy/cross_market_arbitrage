@@ -169,6 +169,10 @@ class AppConfig(BaseModel):
     tqsdk_startup_backfill_range_key: Literal["24h", "7d", "30d", "90d", "1y", "all"] = "30d"
     retention_enabled: bool = True
     retention_interval_sec: int = 21600
+    timeseries_realtime_days: int = 1
+    timeseries_daily_after_days: int = 365
+    timeseries_intraday_bucket_minutes: int = 15
+    timeseries_archive_bucket_days: int = 1
     raw_quote_retention_days: int = 30
     fx_rate_retention_days: int = 30
     normalized_quote_retention_days: int = 30

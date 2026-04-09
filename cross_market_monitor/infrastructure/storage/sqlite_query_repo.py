@@ -320,19 +320,30 @@ class SQLiteQueryRepoMixin:
         limit: int = 300,
         start_ts: str | None = None,
         end_ts: str | None = None,
+        *,
+        offset: int = 0,
+        descending: bool = False,
     ) -> list[dict]:
         where, params = self._build_filters(group_name=group_name, start_ts=start_ts, end_ts=end_ts)
         query = f"""
             SELECT *
             FROM spread_snapshots
             {where}
-            ORDER BY ts DESC
-            LIMIT ?
         """
-        params.append(limit)
+        if limit is None:
+            query += "\nORDER BY ts ASC"
+        else:
+            query += "\nORDER BY ts DESC\nLIMIT ?"
+            params.append(limit)
+            if offset > 0:
+                query += "\nOFFSET ?"
+                params.append(offset)
         with self._lock, self._connect() as connection:
             rows = connection.execute(query, params).fetchall()
-        return self._decode_json_rows(reversed(rows), {"errors", "route_detail"})
+        decoded = self._decode_json_rows(rows, {"errors", "route_detail"})
+        if limit is None or descending:
+            return decoded
+        return list(reversed(decoded))
 
     def export_dataset_to_csv(
         self,

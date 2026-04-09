@@ -33,13 +33,12 @@ class ReplayAnalyzer:
         signal_limit: int = 20,
     ) -> dict:
         pair = self.pairs[group_name]
-        rows = self.repository.fetch_snapshots(
-            group_name=group_name,
+        rows = self._load_bucketed_rows(
+            group_name,
             limit=limit,
             start_ts=start_ts,
             end_ts=end_ts,
         )
-        rows = _bucket_rows(rows, self.bucket_minutes)
         if not rows:
             return ReplayReport(group_name=group_name, sample_count=0).model_dump(mode="json")
 
@@ -151,6 +150,58 @@ class ReplayAnalyzer:
             signal_entries=signals,
         )
         return report.model_dump(mode="json")
+
+    def _load_bucketed_rows(
+        self,
+        group_name: str,
+        *,
+        limit: int,
+        start_ts: str | None,
+        end_ts: str | None,
+    ) -> list[dict]:
+        if self.bucket_minutes <= 1:
+            return self.repository.fetch_snapshots(
+                group_name=group_name,
+                limit=limit,
+                start_ts=start_ts,
+                end_ts=end_ts,
+            )
+
+        if start_ts is not None or end_ts is not None or limit <= 0:
+            rows = self.repository.fetch_snapshots(
+                group_name=group_name,
+                limit=None,
+                start_ts=start_ts,
+                end_ts=end_ts,
+            )
+            bucketed_rows = _bucket_rows(rows, self.bucket_minutes)
+            return bucketed_rows[-limit:] if limit > 0 else bucketed_rows
+
+        batch_size = max(limit * 4, 1000)
+        offset = 0
+        raw_rows_desc: list[dict] = []
+        bucket_keys: set[datetime] = set()
+        while len(bucket_keys) < limit:
+            batch = self.repository.fetch_snapshots(
+                group_name=group_name,
+                limit=batch_size,
+                offset=offset,
+                descending=True,
+            )
+            if not batch:
+                break
+            raw_rows_desc.extend(batch)
+            for row in batch:
+                bucket_key = _bucket_key(row, self.bucket_minutes)
+                if bucket_key is not None:
+                    bucket_keys.add(bucket_key)
+            offset += len(batch)
+            if len(batch) < batch_size:
+                break
+
+        rows = list(reversed(raw_rows_desc))
+        bucketed_rows = _bucket_rows(rows, self.bucket_minutes)
+        return bucketed_rows[-limit:]
 
     def _top_highlights(self, rows: list[dict], limit: int) -> list[ReplayHighlight]:
         scored_rows: list[tuple[float, ReplayHighlight]] = []
@@ -301,17 +352,23 @@ def _bucket_rows(rows: list[dict], bucket_minutes: int) -> list[dict]:
         return rows
     by_bucket: dict[datetime, dict] = {}
     for row in rows:
-        ts_value = row.get("ts_local") or row.get("ts")
-        if not ts_value:
+        bucket_start = _bucket_key(row, bucket_minutes)
+        if bucket_start is None:
             continue
-        dt = _parse_iso(ts_value)
-        bucket_start = dt.replace(
-            minute=(dt.minute // bucket_minutes) * bucket_minutes,
-            second=0,
-            microsecond=0,
-        )
         by_bucket[bucket_start] = row
     return [by_bucket[key] for key in sorted(by_bucket)]
+
+
+def _bucket_key(row: dict, bucket_minutes: int) -> datetime | None:
+    ts_value = row.get("ts_local") or row.get("ts")
+    if not ts_value:
+        return None
+    dt = _parse_iso(ts_value)
+    return dt.replace(
+        minute=(dt.minute // bucket_minutes) * bucket_minutes,
+        second=0,
+        microsecond=0,
+    )
 
 
 def _value_breaches_thresholds(

@@ -41,12 +41,40 @@ class RetentionService:
             )
         )
         try:
+            compacted_rows: dict[str, dict[str, int]] = {}
+            realtime_days = max(int(self.context.config.app.timeseries_realtime_days), 0)
+            daily_after_days = max(int(self.context.config.app.timeseries_daily_after_days), realtime_days + 1)
+            intraday_bucket_seconds = max(int(self.context.config.app.timeseries_intraday_bucket_minutes), 1) * 60
+            archive_bucket_seconds = max(int(self.context.config.app.timeseries_archive_bucket_days), 1) * 86400
+
+            realtime_cutoff_ts = (started - timedelta(days=realtime_days)).isoformat()
+            archive_cutoff_ts = (started - timedelta(days=daily_after_days)).isoformat()
+
+            timeseries_tables = [
+                "raw_quotes",
+                "fx_rates",
+                "normalized_domestic_quotes",
+                "spread_snapshots",
+            ]
+            for table_name in timeseries_tables:
+                daily_compacted = self.context.repository.compact_rows_by_bucket(
+                    table_name,
+                    bucket_seconds=archive_bucket_seconds,
+                    end_ts=archive_cutoff_ts,
+                )
+                intraday_compacted = self.context.repository.compact_rows_by_bucket(
+                    table_name,
+                    bucket_seconds=intraday_bucket_seconds,
+                    start_ts=archive_cutoff_ts,
+                    end_ts=realtime_cutoff_ts,
+                )
+                compacted_rows[table_name] = {
+                    "intraday_bucket_rows_deleted": intraday_compacted,
+                    "archive_bucket_rows_deleted": daily_compacted,
+                }
+
             deleted_rows: dict[str, int] = {}
             retention_targets = [
-                ("raw_quotes", "ts", self.context.config.app.raw_quote_retention_days),
-                ("fx_rates", "ts", self.context.config.app.fx_rate_retention_days),
-                ("normalized_domestic_quotes", "ts", self.context.config.app.normalized_quote_retention_days),
-                ("spread_snapshots", "ts", self.context.config.app.snapshot_retention_days),
                 ("alert_events", "ts", self.context.config.app.alert_retention_days),
                 ("notification_deliveries", "ts", self.context.config.app.delivery_retention_days),
             ]
@@ -62,6 +90,7 @@ class RetentionService:
             finished = utc_now()
             self.context.retention_last_run_at = finished
             report = {
+                "compacted_rows": compacted_rows,
                 "deleted_rows": deleted_rows,
                 "finished_at": finished.isoformat(),
             }

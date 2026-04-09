@@ -1775,7 +1775,7 @@ class MonitorServiceTests(unittest.TestCase):
             self.assertEqual(len(alerts), 1)
             self.assertEqual(alerts[0].category, "data_quality")
 
-    def test_retention_service_prunes_old_rows_and_keeps_latest_snapshot(self) -> None:
+    def test_retention_service_compacts_timeseries_and_keeps_latest_snapshot(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             repository = SQLiteRepository(f"{tmp_dir}/monitor.db")
             config = MonitorConfig.model_validate(
@@ -1784,10 +1784,10 @@ class MonitorServiceTests(unittest.TestCase):
                         "name": "test",
                         "fx_source": "fx",
                         "sqlite_path": f"{tmp_dir}/monitor.db",
-                        "raw_quote_retention_days": 1,
-                        "fx_rate_retention_days": 1,
-                        "normalized_quote_retention_days": 1,
-                        "snapshot_retention_days": 1,
+                        "timeseries_realtime_days": 1,
+                        "timeseries_daily_after_days": 2,
+                        "timeseries_intraday_bucket_minutes": 15,
+                        "timeseries_archive_bucket_days": 1,
                         "alert_retention_days": 1,
                         "delivery_retention_days": 1,
                     },
@@ -1813,85 +1813,80 @@ class MonitorServiceTests(unittest.TestCase):
                 }
             )
             service = MonitorService(config, repository)
-            old_ts = datetime(2026, 3, 1, 0, 0, tzinfo=UTC)
-            fresh_ts = datetime(2026, 3, 13, 0, 0, tzinfo=UTC)
-            repository.insert_raw_quote(
-                "AU_XAU_TEST",
-                "domestic",
-                MarketQuote(
-                    source_name="domestic",
-                    symbol="nf_AU0",
-                    label="AU",
-                    ts=old_ts,
-                    last=100.0,
-                    raw_payload="old",
-                ),
-                timezone_name="Asia/Shanghai",
-            )
-            repository.insert_raw_quote(
-                "AU_XAU_TEST",
-                "domestic",
-                MarketQuote(
-                    source_name="domestic",
-                    symbol="nf_AU0",
-                    label="AU",
-                    ts=fresh_ts,
-                    last=101.0,
-                    raw_payload="new",
-                ),
-                timezone_name="Asia/Shanghai",
-            )
-            repository.insert_snapshot(
-                SpreadSnapshot(
-                    ts=old_ts,
-                    group_name="AU_XAU_TEST",
-                    domestic_symbol="nf_AU0",
-                    overseas_symbol="XAUUSDT",
-                    fx_source="fx",
-                    fx_rate=6.9,
-                    formula="gold",
-                    formula_version="v1",
-                    tax_mode="gross",
-                    target_unit="USD_PER_OUNCE",
-                    status="ok",
-                    normalized_last=100.0,
-                    overseas_last=99.0,
-                    spread=1.0,
-                    spread_pct=0.01,
-                    zscore=1.0,
-                ),
-                timezone_name="Asia/Shanghai",
-            )
-            repository.insert_snapshot(
-                SpreadSnapshot(
-                    ts=fresh_ts,
-                    group_name="AU_XAU_TEST",
-                    domestic_symbol="nf_AU0",
-                    overseas_symbol="XAUUSDT",
-                    fx_source="fx",
-                    fx_rate=6.9,
-                    formula="gold",
-                    formula_version="v1",
-                    tax_mode="gross",
-                    target_unit="USD_PER_OUNCE",
-                    status="ok",
-                    normalized_last=101.0,
-                    overseas_last=100.0,
-                    spread=1.0,
-                    spread_pct=0.01,
-                    zscore=1.1,
-                ),
-                timezone_name="Asia/Shanghai",
-            )
+            archive_early_ts = datetime(2026, 3, 11, 0, 1, tzinfo=UTC)
+            archive_late_ts = datetime(2026, 3, 11, 12, 0, tzinfo=UTC)
+            intraday_early_ts = datetime(2026, 3, 12, 0, 1, tzinfo=UTC)
+            intraday_late_ts = datetime(2026, 3, 12, 0, 10, tzinfo=UTC)
+            fresh_early_ts = datetime(2026, 3, 13, 0, 1, tzinfo=UTC)
+            fresh_late_ts = datetime(2026, 3, 13, 0, 10, tzinfo=UTC)
+
+            for ts, last_px, raw_payload in (
+                (archive_early_ts, 100.0, "archive-early"),
+                (archive_late_ts, 101.0, "archive-late"),
+                (intraday_early_ts, 102.0, "intraday-early"),
+                (intraday_late_ts, 103.0, "intraday-late"),
+                (fresh_early_ts, 104.0, "fresh-early"),
+                (fresh_late_ts, 105.0, "fresh-late"),
+            ):
+                repository.insert_raw_quote(
+                    "AU_XAU_TEST",
+                    "domestic",
+                    MarketQuote(
+                        source_name="domestic",
+                        symbol="nf_AU0",
+                        label="AU",
+                        ts=ts,
+                        last=last_px,
+                        raw_payload=raw_payload,
+                    ),
+                    timezone_name="Asia/Shanghai",
+                )
+
+            for ts, normalized_last, zscore in (
+                (archive_early_ts, 100.0, 1.0),
+                (archive_late_ts, 101.0, 1.1),
+                (intraday_early_ts, 102.0, 1.2),
+                (intraday_late_ts, 103.0, 1.3),
+                (fresh_early_ts, 104.0, 1.4),
+                (fresh_late_ts, 105.0, 1.5),
+            ):
+                repository.insert_snapshot(
+                    SpreadSnapshot(
+                        ts=ts,
+                        group_name="AU_XAU_TEST",
+                        domestic_symbol="nf_AU0",
+                        overseas_symbol="XAUUSDT",
+                        fx_source="fx",
+                        fx_rate=6.9,
+                        formula="gold",
+                        formula_version="v1",
+                        tax_mode="gross",
+                        target_unit="USD_PER_OUNCE",
+                        status="ok",
+                        normalized_last=normalized_last,
+                        overseas_last=99.0,
+                        spread=1.0,
+                        spread_pct=0.01,
+                        zscore=zscore,
+                    ),
+                    timezone_name="Asia/Shanghai",
+                )
 
             report = service.retention.run_once(started_at=datetime(2026, 3, 14, 0, 0, tzinfo=UTC))
 
             raw_rows = repository.fetch_raw_quote_history("AU_XAU_TEST", "domestic", limit=None)
             latest_snapshots = repository.load_latest_snapshots()
-            self.assertEqual(report["deleted_rows"]["raw_quotes"], 1)
-            self.assertEqual(len(raw_rows), 1)
-            self.assertEqual(raw_rows[0]["last_px"], 101.0)
-            self.assertEqual(latest_snapshots[0].normalized_last, 101.0)
+            self.assertEqual(
+                report["compacted_rows"]["raw_quotes"],
+                {"intraday_bucket_rows_deleted": 1, "archive_bucket_rows_deleted": 1},
+            )
+            self.assertEqual(
+                report["compacted_rows"]["spread_snapshots"],
+                {"intraday_bucket_rows_deleted": 1, "archive_bucket_rows_deleted": 1},
+            )
+            self.assertEqual(len(raw_rows), 4)
+            self.assertEqual([row["last_px"] for row in raw_rows], [101.0, 103.0, 104.0, 105.0])
+            self.assertEqual(latest_snapshots[0].normalized_last, 105.0)
 
     def test_syncs_domestic_and_overseas_preferences_across_tax_variants(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

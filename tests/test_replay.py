@@ -58,6 +58,7 @@ class ReplayAnalyzerTests(unittest.TestCase):
             report = analyzer.analyze("AU_XAU", limit=100)
 
             self.assertEqual(report["sample_count"], 4)
+            self.assertAlmostEqual(report["replay_zscore"], -1.2126781251816647)
             self.assertAlmostEqual(report["spread_pct_mean"], 0.0175)
             self.assertAlmostEqual(report["spread_pct_std"], 0.010307764064044151)
             self.assertAlmostEqual(report["spread_pct_median"], 0.0175)
@@ -119,6 +120,7 @@ class ReplayAnalyzerTests(unittest.TestCase):
             report = analyzer.analyze("AU_XAU", limit=100)
 
             self.assertEqual(report["sample_count"], 2)
+            self.assertAlmostEqual(report["replay_zscore"], 1.0)
             self.assertAlmostEqual(report["latest_spread_pct"], 0.040)
             self.assertAlmostEqual(report["spread_pct_mean"], 0.035)
 
@@ -166,6 +168,7 @@ class ReplayAnalyzerTests(unittest.TestCase):
             report = analyzer.analyze("AU_XAU", limit=4)
 
             self.assertEqual(report["sample_count"], 4)
+            self.assertAlmostEqual(report["replay_zscore"], 1.3416407864998743)
             self.assertAlmostEqual(report["latest_spread_pct"], 0.012)
             self.assertAlmostEqual(report["spread_pct_mean"], (0.0075 + 0.009 + 0.0105 + 0.012) / 4)
 

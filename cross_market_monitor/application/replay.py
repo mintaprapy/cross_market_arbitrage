@@ -89,6 +89,7 @@ class ReplayAnalyzer:
             )
         ]
         profitable_after_cost_count = sum(1 for edge in net_edges if edge > 0)
+        replay_zscore = _sample_zscore(spread_pcts, rows[-1]["spread_pct"])
 
         highlights = self._top_highlights(rows, limit=highlight_limit)
         signals = self._signal_entries(rows, pair, signal_limit=signal_limit)
@@ -107,6 +108,7 @@ class ReplayAnalyzer:
             latest_spread=rows[-1]["spread"],
             latest_spread_pct=rows[-1]["spread_pct"],
             latest_zscore=rows[-1]["zscore"],
+            replay_zscore=replay_zscore,
             spread_mean=_safe_mean(spreads),
             spread_std=_safe_std(spreads),
             spread_min=min(spreads) if spreads else None,
@@ -341,6 +343,16 @@ def _percentile_rank(values: list[float], current: float | None) -> float | None
     less_than = sum(1 for value in values if value < current)
     equal_to = sum(1 for value in values if value == current)
     return (less_than + 0.5 * equal_to) / len(values)
+
+
+def _sample_zscore(values: list[float], current: float | None) -> float | None:
+    if not values or current is None:
+        return None
+    avg = _safe_mean(values)
+    std = _safe_std(values)
+    if avg is None or std in (None, 0):
+        return None
+    return (current - avg) / std
 
 
 def _parse_iso(value: str) -> datetime:

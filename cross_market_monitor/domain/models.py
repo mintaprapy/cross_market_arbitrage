@@ -379,6 +379,7 @@ class ReplayReport(BaseModel):
     latest_spread: float | None = None
     latest_spread_pct: float | None = None
     latest_zscore: float | None = None
+    replay_zscore: float | None = None
     spread_mean: float | None = None
     spread_std: float | None = None
     spread_min: float | None = None

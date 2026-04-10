@@ -336,6 +336,15 @@
       return { spread, spreadPct: spread * 2 / denominator };
     }
 
+    function computePremiumRatio(normalizedDomesticPrice, overseasPrice) {
+      const normalized = toFiniteNumber(normalizedDomesticPrice);
+      const overseas = toFiniteNumber(overseasPrice);
+      if (normalized === null || overseas === null || overseas === 0) {
+        return null;
+      }
+      return normalized / overseas - 1;
+    }
+
     function displayItem(item, health = null) {
       if (!item) return item;
       const fxRate = displayFxRate(health);
@@ -1276,15 +1285,16 @@
       return cardGroup.variants.map((item) => taxModeForGroup(item.group_name)).join(" / ");
     }
 
-    function buildVariantValueLines(cardGroup, formatter) {
+    function buildVariantValueLines(cardGroup, formatter, options = {}) {
       const variants = cardGroup?.variants || [];
+      const showTag = options.showTag ?? false;
       return variants.map((item) => {
-        const tag = variants.length > 1 ? taxModeForGroup(item.group_name) : "";
+        const tag = showTag && variants.length > 1 ? taxModeForGroup(item.group_name) : "";
         const value = formatter(item);
         return `
-          <div class="summary-line">
-            <span class="summary-tag">${escapeHtml(tag)}</span>
-            <strong>${escapeHtml(value)}</strong>
+          <div class="summary-line${tag ? " tagged" : ""}">
+            ${tag ? `<span class="summary-tag">${escapeHtml(tag)}</span>` : ""}
+            ${value !== null && value !== undefined && value !== "" ? `<strong>${escapeHtml(value)}</strong>` : ""}
           </div>
         `;
       }).join("");
@@ -1314,24 +1324,23 @@
         return "";
       }
       const item = cardGroup.selected_item;
-      const domesticLabel = domesticPreference?.selected_label || item.domestic_label || item.domestic_symbol || "--";
-      const overseasLabel = overseasPreference?.selected_label || item.overseas_label || item.overseas_symbol || "--";
       const activeClass = cardKeyForGroup(ACTIVE_CARD_GROUP_NAME || "") === cardGroup.card_key ? " active" : "";
       return `
         <tr id="${buildInstrumentRowId(cardGroup.card_key)}" class="summary-row summary-row-clickable${activeClass}" data-card-key="${escapeHtml(cardGroup.card_key)}" data-action="open-card" data-group-name="${escapeHtml(item.group_name)}">
           <td>
             <button type="button" class="summary-link summary-link-button">
               <strong>${escapeHtml(cardGroup.display_name || displayNameForGroup(item.group_name))}</strong>
-              <span class="summary-sub">${escapeHtml(domesticLabel)} / ${escapeHtml(overseasLabel)}</span>
             </button>
           </td>
-          <td class="numeric-cell"><div class="summary-lines">${buildVariantValueLines(cardGroup, (variant) => formatTableNumber(variant.domestic_last_raw, domesticPriceDigits(variant)))}</div></td>
+          <td class="numeric-cell"><div class="summary-lines">${buildVariantValueLines(cardGroup, (variant) => formatTableNumber(variant.domestic_last_raw, domesticPriceDigits(variant)), { showTag: true })}</div></td>
           <td class="numeric-cell"><div class="summary-lines">${buildVariantValueLines(cardGroup, (variant) => formatDomesticLotNotional(variant))}</div></td>
           <td class="numeric-cell"><div class="summary-lines">${buildVariantValueLines(cardGroup, (variant) => formatTableNumber(displayItem(variant, health).normalized_last, 2))}</div></td>
           <td class="numeric-cell"><div class="summary-lines">${buildVariantValueLines(cardGroup, (variant) => formatTableNumber(variant.overseas_last, 2))}</div></td>
           <td class="numeric-cell"><div class="summary-lines">${buildVariantValueLines(cardGroup, (variant) => formatHedgePosition(variant))}</div></td>
           <td class="numeric-cell"><div class="summary-lines">${buildVariantValueLines(cardGroup, (variant) => formatTableSignedNumber(displayItem(variant, health).spread, 2))}</div></td>
           <td class="numeric-cell"><div class="summary-lines">${buildVariantValueLines(cardGroup, (variant) => formatTablePct(displayItem(variant, health).spread_pct))}</div></td>
+          <td class="numeric-cell"><div class="summary-lines">${buildVariantValueLines(cardGroup, (variant) => formatTablePct(computePremiumRatio(displayItem(variant, health).normalized_last, variant.overseas_last)))}</div></td>
+          <td class="numeric-cell"><div class="summary-lines">${buildVariantValueLines(cardGroup, (variant) => formatTableNumber(variant.zscore, 2))}</div></td>
         </tr>
       `;
     }
@@ -1347,7 +1356,7 @@
       ).filter(Boolean);
       document.getElementById("instrument-summary").innerHTML = rows.length
         ? rows.join("")
-        : `<tr><td colspan="8" class="muted">等待第一轮轮询完成后展示标的概览。</td></tr>`;
+        : `<tr><td colspan="10" class="muted">等待第一轮轮询完成后展示标的概览。</td></tr>`;
       updateInstrumentActiveRows();
     }
 
@@ -1373,7 +1382,7 @@
     }
 
     function renderReplayPlaceholder(message = "点击上方标的查看对应回放研究。") {
-      document.getElementById("replay").innerHTML = `<tr><td colspan="7" class="muted">${escapeHtml(message)}</td></tr>`;
+      document.getElementById("replay").innerHTML = `<tr><td colspan="8" class="muted">${escapeHtml(message)}</td></tr>`;
     }
 
     function buildVariantSelector(cardGroup) {
@@ -1737,6 +1746,7 @@
           <td>${formatPct(report.spread_pct_mean)}</td>
           <td>${formatPct(report.spread_pct_std)}</td>
           <td>${formatPct(report.spread_pct_median)}</td>
+          <td>${formatNumber(report.replay_zscore, 2)}</td>
           <td>${formatPct(report.latest_spread_pct_percentile)}</td>
           <td>${formatPct(report.realized_daily_vol_pct)}</td>
         </tr>
@@ -1747,7 +1757,7 @@
       return `
         <tr id="${buildReplayRowId(cardGroup.card_key)}">
           <td>${escapeHtml(cardGroup.display_name || displayNameForGroup(cardGroup.card_key || cardGroup.selected_item.group_name))}</td>
-          <td colspan="6" class="muted">正在加载回放统计...</td>
+          <td colspan="7" class="muted">正在加载回放统计...</td>
         </tr>
       `;
     }
@@ -1756,7 +1766,7 @@
       return `
         <tr id="${buildReplayRowId(cardGroup.card_key)}">
           <td>${escapeHtml(cardGroup.display_name || displayNameForGroup(cardGroup.card_key || cardGroup.selected_item.group_name))}</td>
-          <td colspan="6" class="muted">${escapeHtml(message)}</td>
+          <td colspan="7" class="muted">${escapeHtml(message)}</td>
         </tr>
       `;
     }
@@ -1874,7 +1884,7 @@
           const message = `
             <tr id="${buildReplayRowId(cardGroup.card_key)}">
               <td>${escapeHtml(cardGroup.display_name || displayNameForGroup(cardGroup.card_key || cardGroup.selected_item.group_name))}</td>
-              <td colspan="6" class="muted">回放研究加载失败：${escapeHtml(error.message)}</td>
+              <td colspan="7" class="muted">回放研究加载失败：${escapeHtml(error.message)}</td>
             </tr>
           `;
           if (existingReplayRow) {

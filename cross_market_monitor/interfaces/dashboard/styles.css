@@ -716,9 +716,42 @@
       font-size: 12px;
       white-space: nowrap;
     }
+    .instrument-summary-table th,
+    .instrument-summary-table td {
+      padding: 8px 4px;
+      font-size: 13px;
+    }
+    .instrument-summary-table th:first-child,
+    .instrument-summary-table td:first-child {
+      width: 132px;
+    }
+    .instrument-summary-table th:nth-child(2),
+    .instrument-summary-table td:nth-child(2) {
+      width: 104px;
+    }
+    .instrument-summary-table th:nth-child(3),
+    .instrument-summary-table td:nth-child(3),
+    .instrument-summary-table th:nth-child(4),
+    .instrument-summary-table td:nth-child(4),
+    .instrument-summary-table th:nth-child(5),
+    .instrument-summary-table td:nth-child(5),
+    .instrument-summary-table th:nth-child(6),
+    .instrument-summary-table td:nth-child(6),
+    .instrument-summary-table th:nth-child(7),
+    .instrument-summary-table td:nth-child(7),
+    .instrument-summary-table th:nth-child(8),
+    .instrument-summary-table td:nth-child(8),
+    .instrument-summary-table th:nth-child(9),
+    .instrument-summary-table td:nth-child(9) {
+      width: 92px;
+    }
+    .instrument-summary-table th:nth-child(10),
+    .instrument-summary-table td:nth-child(10) {
+      width: 70px;
+    }
     .instrument-summary-table td.numeric-cell {
       text-align: right;
-      padding-right: 14px;
+      padding-right: 6px;
       font-variant-numeric: tabular-nums;
       font-feature-settings: "tnum" 1;
       white-space: nowrap;
@@ -729,28 +762,32 @@
     }
     .instrument-summary-table th.numeric-cell {
       text-align: center;
-      padding-right: 8px;
-      padding-left: 8px;
+      padding-right: 4px;
+      padding-left: 4px;
     }
     .instrument-summary-table td.numeric-cell strong {
       display: inline-block;
-      min-width: 9ch;
+      min-width: 0;
       text-align: right;
       font-variant-numeric: tabular-nums;
       font-feature-settings: "tnum" 1;
     }
     .summary-lines {
       display: grid;
-      gap: 6px;
+      gap: 5px;
     }
     .summary-line {
       display: flex;
       align-items: center;
       gap: 8px;
-      min-height: 22px;
+      min-height: 20px;
+      justify-content: flex-end;
+    }
+    .summary-line.tagged {
+      gap: 12px;
     }
     .summary-tag {
-      min-width: 38px;
+      min-width: 28px;
       color: var(--muted);
       font-size: 12px;
       line-height: 1.2;

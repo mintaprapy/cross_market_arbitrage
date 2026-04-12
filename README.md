@@ -70,13 +70,35 @@ python -m pip install -e ".[tqsdk]"
 
 5. 安装 systemd 服务
 
+推荐使用双服务：
+- `cross-market-monitor-worker.service`
+- `cross-market-monitor-api.service`
+
 ```bash
-sudo cp systemd/cross-market-monitor.service /etc/systemd/system/cross-market-monitor.service
+sudo cp systemd/cross-market-monitor-worker.service /etc/systemd/system/cross-market-monitor-worker.service
+sudo cp systemd/cross-market-monitor-api.service /etc/systemd/system/cross-market-monitor-api.service
 sudo systemctl daemon-reload
-sudo systemctl enable --now cross-market-monitor
+sudo systemctl enable --now cross-market-monitor-worker
+sudo systemctl enable --now cross-market-monitor-api
 ```
 
-如果服务器运行用户不是 `ubuntu`，先修改 [cross-market-monitor.service](/Users/m2/Desktop/Codex2026/cross_market_arbitrage/systemd/cross-market-monitor.service) 里的：
+如果服务器之前已经在跑旧的单进程服务 `cross-market-monitor.service`，先切掉旧服务再启用双服务：
+
+```bash
+sudo systemctl disable --now cross-market-monitor || true
+sudo cp systemd/cross-market-monitor-worker.service /etc/systemd/system/cross-market-monitor-worker.service
+sudo cp systemd/cross-market-monitor-api.service /etc/systemd/system/cross-market-monitor-api.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now cross-market-monitor-worker
+sudo systemctl enable --now cross-market-monitor-api
+```
+
+如果服务器运行用户不是 `ubuntu`，先修改下面两个文件里的：
+
+- [cross-market-monitor-worker.service](/Users/m2/Desktop/Codex2026/cross_market_arbitrage/systemd/cross-market-monitor-worker.service)
+- [cross-market-monitor-api.service](/Users/m2/Desktop/Codex2026/cross_market_arbitrage/systemd/cross-market-monitor-api.service)
+
+需要检查的字段：
 
 - `User`
 - `Group`
@@ -87,8 +109,10 @@ sudo systemctl enable --now cross-market-monitor
 6. 验证服务
 
 ```bash
-sudo systemctl status cross-market-monitor --no-pager
-sudo journalctl -u cross-market-monitor -n 100 --no-pager
+sudo systemctl status cross-market-monitor-worker --no-pager
+sudo systemctl status cross-market-monitor-api --no-pager
+sudo journalctl -u cross-market-monitor-worker -n 100 --no-pager
+sudo journalctl -u cross-market-monitor-api -n 100 --no-pager
 curl -fsS http://localhost:6080/api/health | python3 -m json.tool
 curl -fsS http://localhost:6080/api/snapshot | python3 -m json.tool | head
 ```

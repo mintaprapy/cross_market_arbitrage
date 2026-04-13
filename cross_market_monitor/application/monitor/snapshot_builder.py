@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from cross_market_monitor.application.common import (
     age_seconds,
-    is_within_trading_sessions,
+    is_pair_domestic_session_open,
     latest_session_end_before,
     max_skew_seconds,
     utc_now,
@@ -35,6 +35,8 @@ class SnapshotBuilder:
         now_local = utc_now().astimezone(self.context.local_tz)
         domestic_session_constrained = bool(pair.trading_sessions_local)
         domestic_session_open = self.is_domestic_session_open(pair, now_local) if domestic_session_constrained else True
+        if domestic_session_constrained and not domestic_session_open:
+            return await self.build_off_session_snapshot(pair)
         domestic_quote, domestic_quotes, domestic_errors, domestic_detail = await self.quote_router.fetch_leg_quote(
             pair.group_name,
             "domestic",
@@ -217,6 +219,107 @@ class SnapshotBuilder:
         await self.alert_service.dispatch_alerts(alerts)
         return snapshot
 
+    async def build_off_session_snapshot(self, pair: PairConfig) -> SpreadSnapshot:
+        now_utc = utc_now()
+        previous_snapshot = self.context.latest_snapshots.get(pair.group_name)
+        domestic_symbol = self.context.preferred_domestic_symbols.get(pair.group_name, pair.domestic_symbol)
+        domestic_quote = self.context.repository.load_latest_raw_quote_before(
+            pair.group_name,
+            "domestic",
+            domestic_symbol,
+            now_utc,
+        )
+        fx_quote = self.context.repository.load_latest_fx_rate_before_any(
+            self.fx_service.fx_source_names(),
+            domestic_quote.ts if domestic_quote is not None else now_utc,
+        )
+        normalized_quote = normalize_domestic_quote(
+            pair,
+            fx_quote.rate if fx_quote else None,
+            domestic_quote.last if domestic_quote else None,
+            domestic_quote.bid if domestic_quote else None,
+            domestic_quote.ask if domestic_quote else None,
+        )
+        overseas_quote, _, _, overseas_detail = await self.quote_router.fetch_leg_quote(
+            pair.group_name,
+            "overseas",
+            self.route_preferences.overseas_candidates(pair),
+        )
+        if previous_snapshot is None:
+            snapshot_ts = utc_now()
+            snapshot = SpreadSnapshot(
+                ts=snapshot_ts,
+                ts_local=snapshot_ts.astimezone(self.context.local_tz),
+                group_name=pair.group_name,
+                domestic_symbol=pair.domestic_symbol,
+                overseas_symbol=overseas_quote.symbol if overseas_quote else pair.overseas_symbol,
+                domestic_source=pair.domestic_source,
+                overseas_source=overseas_quote.source_name if overseas_quote else pair.overseas_source,
+                domestic_label=pair.domestic_label,
+                overseas_label=overseas_quote.label if overseas_quote else pair.overseas_label,
+                fx_source=fx_quote.source_name if fx_quote else self.context.config.app.fx_source,
+                fx_rate=fx_quote.rate if fx_quote else None,
+                formula=pair.formula,
+                formula_version=pair.formula_version,
+                tax_mode=pair.tax_mode,
+                target_unit=pair.target_unit,
+                status="partial",
+                signal_state="active",
+                domestic_last_raw=domestic_quote.last if domestic_quote else None,
+                domestic_bid_raw=domestic_quote.bid if domestic_quote else None,
+                domestic_ask_raw=domestic_quote.ask if domestic_quote else None,
+                overseas_last=overseas_quote.last if overseas_quote else None,
+                overseas_bid=overseas_quote.bid if overseas_quote else None,
+                overseas_ask=overseas_quote.ask if overseas_quote else None,
+                normalized_last=normalized_quote.last,
+                normalized_bid=normalized_quote.bid,
+                normalized_ask=normalized_quote.ask,
+                domestic_age_sec=age_seconds(domestic_quote.ts) if domestic_quote else None,
+                overseas_age_sec=age_seconds(overseas_quote.ts) if overseas_quote else None,
+                fx_age_sec=age_seconds(fx_quote.ts) if fx_quote else None,
+                route_detail={
+                    "overseas": overseas_detail,
+                    "off_session_overseas_only": True,
+                    "effective_fx_ts": fx_quote.ts.isoformat() if fx_quote else None,
+                    "effective_fx_source": fx_quote.source_name if fx_quote else None,
+                },
+            )
+            self.context.latest_snapshots[pair.group_name] = snapshot
+            return snapshot
+
+        route_detail = dict(previous_snapshot.route_detail)
+        route_detail["overseas"] = overseas_detail
+        route_detail["off_session_overseas_only"] = True
+        route_detail["effective_fx_ts"] = fx_quote.ts.isoformat() if fx_quote else route_detail.get("effective_fx_ts")
+        route_detail["effective_fx_source"] = fx_quote.source_name if fx_quote else route_detail.get("effective_fx_source")
+        updated_snapshot = previous_snapshot.model_copy(
+            update={
+                "domestic_source": domestic_quote.source_name if domestic_quote else previous_snapshot.domestic_source,
+                "domestic_symbol": domestic_quote.symbol if domestic_quote else previous_snapshot.domestic_symbol,
+                "domestic_label": domestic_quote.label if domestic_quote else previous_snapshot.domestic_label,
+                "fx_source": fx_quote.source_name if fx_quote else previous_snapshot.fx_source,
+                "fx_rate": fx_quote.rate if fx_quote else previous_snapshot.fx_rate,
+                "domestic_last_raw": domestic_quote.last if domestic_quote else previous_snapshot.domestic_last_raw,
+                "domestic_bid_raw": domestic_quote.bid if domestic_quote else previous_snapshot.domestic_bid_raw,
+                "domestic_ask_raw": domestic_quote.ask if domestic_quote else previous_snapshot.domestic_ask_raw,
+                "overseas_source": overseas_quote.source_name if overseas_quote else previous_snapshot.overseas_source,
+                "overseas_symbol": overseas_quote.symbol if overseas_quote else previous_snapshot.overseas_symbol,
+                "overseas_label": overseas_quote.label if overseas_quote else previous_snapshot.overseas_label,
+                "overseas_last": overseas_quote.last if overseas_quote else previous_snapshot.overseas_last,
+                "overseas_bid": overseas_quote.bid if overseas_quote else previous_snapshot.overseas_bid,
+                "overseas_ask": overseas_quote.ask if overseas_quote else previous_snapshot.overseas_ask,
+                "normalized_last": normalized_quote.last if normalized_quote.last is not None else previous_snapshot.normalized_last,
+                "normalized_bid": normalized_quote.bid if normalized_quote.bid is not None else previous_snapshot.normalized_bid,
+                "normalized_ask": normalized_quote.ask if normalized_quote.ask is not None else previous_snapshot.normalized_ask,
+                "domestic_age_sec": age_seconds(domestic_quote.ts) if domestic_quote else previous_snapshot.domestic_age_sec,
+                "overseas_age_sec": age_seconds(overseas_quote.ts) if overseas_quote else previous_snapshot.overseas_age_sec,
+                "fx_age_sec": age_seconds(fx_quote.ts) if fx_quote else previous_snapshot.fx_age_sec,
+                "route_detail": route_detail,
+            }
+        )
+        self.context.latest_snapshots[pair.group_name] = updated_snapshot
+        return updated_snapshot
+
     def freeze_domestic_quotes_if_closed(
         self,
         pair: PairConfig,
@@ -250,9 +353,9 @@ class SnapshotBuilder:
         return frozen_quote, [frozen_quote]
 
     def is_domestic_session_open(self, pair: PairConfig, now_local) -> bool:
-        return is_within_trading_sessions(
+        return is_pair_domestic_session_open(
+            pair,
             now_local,
-            pair.trading_sessions_local,
             non_trading_dates=self.context.config.app.domestic_non_trading_dates_local,
             weekends_closed=self.context.config.app.domestic_weekends_closed,
         )

@@ -215,6 +215,23 @@ def is_within_trading_sessions(
     ) is not None
 
 
+def is_pair_domestic_session_open(
+    pair: PairConfig,
+    local_dt: datetime,
+    *,
+    non_trading_dates: list[str] | set[date] | None = None,
+    weekends_closed: bool = True,
+) -> bool:
+    if not pair.trading_sessions_local:
+        return True
+    return is_within_trading_sessions(
+        local_dt,
+        pair.trading_sessions_local,
+        non_trading_dates=non_trading_dates,
+        weekends_closed=weekends_closed,
+    )
+
+
 def active_trading_session_window(
     local_dt: datetime,
     sessions: list[str],

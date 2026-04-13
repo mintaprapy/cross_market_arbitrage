@@ -1,9 +1,11 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from math import sqrt
 from statistics import mean, median, pstdev
+from zoneinfo import ZoneInfo
 
+from cross_market_monitor.application.common import is_pair_domestic_session_open
 from cross_market_monitor.domain.models import PairConfig, ReplayHighlight, ReplayReport, ReplaySignalEvent
 from cross_market_monitor.infrastructure.repository import SQLiteRepository
 
@@ -16,11 +18,17 @@ class ReplayAnalyzer:
         *,
         target_daily_vol_pct: float = 0.015,
         bucket_minutes: int = 15,
+        timezone_name: str = "Asia/Shanghai",
+        domestic_non_trading_dates_local: list[str] | set[date] | None = None,
+        domestic_weekends_closed: bool = True,
     ) -> None:
         self.repository = repository
         self.pairs = {pair.group_name: pair for pair in pairs}
         self.target_daily_vol_pct = target_daily_vol_pct
         self.bucket_minutes = max(int(bucket_minutes), 1)
+        self.local_tz = ZoneInfo(timezone_name)
+        self.domestic_non_trading_dates_local = domestic_non_trading_dates_local
+        self.domestic_weekends_closed = domestic_weekends_closed
 
     def analyze(
         self,
@@ -34,7 +42,7 @@ class ReplayAnalyzer:
     ) -> dict:
         pair = self.pairs[group_name]
         rows = self._load_bucketed_rows(
-            group_name,
+            pair,
             limit=limit,
             start_ts=start_ts,
             end_ts=end_ts,
@@ -155,19 +163,21 @@ class ReplayAnalyzer:
 
     def _load_bucketed_rows(
         self,
-        group_name: str,
+        pair: PairConfig,
         *,
         limit: int,
         start_ts: str | None,
         end_ts: str | None,
     ) -> list[dict]:
+        group_name = pair.group_name
         if self.bucket_minutes <= 1:
-            return self.repository.fetch_snapshots(
+            rows = self.repository.fetch_snapshots(
                 group_name=group_name,
                 limit=limit,
                 start_ts=start_ts,
                 end_ts=end_ts,
             )
+            return [row for row in rows if self._row_in_domestic_session(pair, row)]
 
         if start_ts is not None or end_ts is not None or limit <= 0:
             rows = self.repository.fetch_snapshots(
@@ -176,7 +186,11 @@ class ReplayAnalyzer:
                 start_ts=start_ts,
                 end_ts=end_ts,
             )
-            bucketed_rows = _bucket_rows(rows, self.bucket_minutes)
+            bucketed_rows = [
+                row
+                for row in _bucket_rows(rows, self.bucket_minutes)
+                if self._row_in_domestic_session(pair, row)
+            ]
             return bucketed_rows[-limit:] if limit > 0 else bucketed_rows
 
         batch_size = max(limit * 4, 1000)
@@ -202,8 +216,30 @@ class ReplayAnalyzer:
                 break
 
         rows = list(reversed(raw_rows_desc))
-        bucketed_rows = _bucket_rows(rows, self.bucket_minutes)
+        bucketed_rows = [
+            row
+            for row in _bucket_rows(rows, self.bucket_minutes)
+            if self._row_in_domestic_session(pair, row)
+        ]
         return bucketed_rows[-limit:]
+
+    def _row_in_domestic_session(self, pair: PairConfig, row: dict) -> bool:
+        if not pair.trading_sessions_local:
+            return True
+        timestamp_text = row.get("ts_local") or row.get("ts")
+        if not timestamp_text:
+            return False
+        local_dt = _parse_iso(timestamp_text)
+        if local_dt.tzinfo is None:
+            local_dt = local_dt.replace(tzinfo=self.local_tz)
+        else:
+            local_dt = local_dt.astimezone(self.local_tz)
+        return is_pair_domestic_session_open(
+            pair,
+            local_dt,
+            non_trading_dates=self.domestic_non_trading_dates_local,
+            weekends_closed=self.domestic_weekends_closed,
+        )
 
     def _top_highlights(self, rows: list[dict], limit: int) -> list[ReplayHighlight]:
         scored_rows: list[tuple[float, ReplayHighlight]] = []

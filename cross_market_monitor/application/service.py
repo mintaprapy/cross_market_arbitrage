@@ -162,6 +162,9 @@ class MonitorService:
             self._enabled_pairs,
             target_daily_vol_pct=config.app.replay_target_daily_vol_pct,
             bucket_minutes=config.app.replay_bucket_minutes,
+            timezone_name=config.app.timezone,
+            domestic_non_trading_dates_local=config.app.domestic_non_trading_dates_local,
+            domestic_weekends_closed=config.app.domestic_weekends_closed,
         )
 
         self.context = ServiceContext(

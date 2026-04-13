@@ -2886,11 +2886,210 @@ class MonitorServiceTests(unittest.TestCase):
             self.assertEqual(snapshot.domestic_last_raw, 100.0)
             self.assertEqual(snapshot.fx_rate, 7.0)
             self.assertEqual(snapshot.overseas_last, 460.0)
-            self.assertNotEqual(snapshot.spread_pct, 0.009802460614329452)
+            self.assertEqual(snapshot.spread_pct, 0.009802460614329452)
             self.assertEqual(snapshot.rolling_mean, 0.01)
             self.assertEqual(snapshot.rolling_std, 0.002)
             self.assertEqual(snapshot.zscore, 1.5)
             self.assertEqual(snapshot.delta_spread, 0.0004)
+
+    def test_outside_session_only_persists_overseas_raw_quote(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repository = SQLiteRepository(f"{tmp_dir}/monitor.db")
+            config = MonitorConfig.model_validate(
+                {
+                    "app": {
+                        "name": "test",
+                        "timezone": "Asia/Shanghai",
+                        "fx_source": "fx",
+                        "sqlite_path": f"{tmp_dir}/monitor.db",
+                    },
+                    "sources": {
+                        "domestic": {"kind": "mock_quote", "base_url": "http://local"},
+                        "overseas": {"kind": "mock_quote", "base_url": "http://local"},
+                        "fx": {"kind": "mock_fx", "base_url": "http://local"},
+                    },
+                    "pairs": [
+                        {
+                            "group_name": "AU_XAU_TEST",
+                            "domestic_source": "domestic",
+                            "domestic_symbol": "nf_AU0",
+                            "domestic_label": "AU Main",
+                            "overseas_source": "overseas",
+                            "overseas_symbol": "XAU",
+                            "overseas_label": "XAU",
+                            "formula": "gold",
+                            "domestic_unit": "CNY_PER_GRAM",
+                            "target_unit": "USD_PER_OUNCE",
+                            "trading_sessions_local": ["09:00-10:00"],
+                        }
+                    ],
+                }
+            )
+            close_ts = datetime(2026, 3, 20, 2, 0, tzinfo=UTC)
+            now_ts = datetime(2026, 3, 20, 4, 0, tzinfo=UTC)
+            repository.insert_raw_quote(
+                "AU_XAU_TEST",
+                "domestic",
+                MarketQuote(
+                    source_name="domestic",
+                    symbol="nf_AU0",
+                    label="AU Main",
+                    ts=close_ts,
+                    last=100.0,
+                    bid=99.9,
+                    ask=100.1,
+                    raw_payload="session-close",
+                ),
+            )
+            repository.insert_fx_rate(
+                FXQuote(
+                    source_name="fx",
+                    pair="USD/CNY",
+                    ts=close_ts - timedelta(minutes=5),
+                    rate=7.0,
+                    raw_payload="close-fx",
+                )
+            )
+            repository.insert_snapshot(
+                SpreadSnapshot(
+                    ts=close_ts,
+                    group_name="AU_XAU_TEST",
+                    domestic_symbol="nf_AU0",
+                    overseas_symbol="XAU",
+                    fx_source="fx",
+                    fx_rate=7.0,
+                    formula="gold",
+                    formula_version="v1",
+                    tax_mode="gross",
+                    target_unit="USD_PER_OUNCE",
+                    status="ok",
+                    domestic_source="domestic",
+                    overseas_source="overseas",
+                    domestic_label="AU Main",
+                    overseas_label="XAU",
+                    domestic_last_raw=100.0,
+                    normalized_last=444.0,
+                    overseas_last=440.0,
+                    spread=4.0,
+                    spread_pct=0.009,
+                    route_detail={},
+                    errors=[],
+                ),
+                timezone_name="Asia/Shanghai",
+            )
+
+            service = MonitorService(config, repository)
+            domestic_adapter = CountingQuoteAdapter("domestic", 101.0)
+            overseas_adapter = FixedTimestampQuoteAdapter("overseas", now_ts, 460.0, 459.0, 461.0)
+            fx_adapter = CountingFxAdapter("fx", 7.2)
+            service.adapters["domestic"] = domestic_adapter
+            service.adapters["overseas"] = overseas_adapter
+            service.adapters["fx"] = fx_adapter
+
+            with mock.patch("cross_market_monitor.application.common.utc_now", return_value=now_ts):
+                with mock.patch("cross_market_monitor.application.monitor.poll_cycle.utc_now", return_value=now_ts):
+                    with mock.patch("cross_market_monitor.application.monitor.snapshot_builder.utc_now", return_value=now_ts):
+                        asyncio.run(service.poll_once())
+
+            self.assertEqual(domestic_adapter.calls, 0)
+            self.assertEqual(fx_adapter.calls, 0)
+            self.assertEqual(len(repository.fetch_snapshots("AU_XAU_TEST", limit=None)), 1)
+            self.assertEqual(len(repository.fetch_fx_history("fx", limit=None)), 1)
+            overseas_rows = repository.fetch_raw_quote_history(
+                "AU_XAU_TEST",
+                "overseas",
+                symbol="XAU",
+                limit=None,
+            )
+            self.assertEqual(len(overseas_rows), 1)
+            self.assertEqual(overseas_rows[0]["last_px"], 460.0)
+
+    def test_snapshot_summary_uses_live_overseas_quote_when_domestic_market_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repository = SQLiteRepository(f"{tmp_dir}/monitor.db")
+            config = MonitorConfig.model_validate(
+                {
+                    "app": {
+                        "name": "test",
+                        "timezone": "Asia/Shanghai",
+                        "fx_source": "fx",
+                        "sqlite_path": f"{tmp_dir}/monitor.db",
+                    },
+                    "sources": {
+                        "domestic": {"kind": "mock_quote", "base_url": "http://local"},
+                        "overseas": {"kind": "mock_quote", "base_url": "http://local"},
+                        "fx": {"kind": "mock_fx", "base_url": "http://local"},
+                    },
+                    "pairs": [
+                        {
+                            "group_name": "AU_XAU_TEST",
+                            "domestic_source": "domestic",
+                            "domestic_symbol": "nf_AU0",
+                            "domestic_label": "AU Main",
+                            "overseas_source": "overseas",
+                            "overseas_symbol": "XAU",
+                            "overseas_label": "XAU",
+                            "formula": "gold",
+                            "domestic_unit": "CNY_PER_GRAM",
+                            "target_unit": "USD_PER_OUNCE",
+                            "trading_sessions_local": ["09:00-10:00"],
+                        }
+                    ],
+                }
+            )
+            close_ts = datetime(2026, 3, 20, 2, 0, tzinfo=UTC)
+            live_overseas_ts = datetime(2026, 3, 20, 4, 0, tzinfo=UTC)
+            repository.insert_snapshot(
+                SpreadSnapshot(
+                    ts=close_ts,
+                    group_name="AU_XAU_TEST",
+                    domestic_symbol="nf_AU0",
+                    overseas_symbol="XAU",
+                    fx_source="fx",
+                    fx_rate=7.0,
+                    formula="gold",
+                    formula_version="v1",
+                    tax_mode="gross",
+                    target_unit="USD_PER_OUNCE",
+                    status="ok",
+                    domestic_source="domestic",
+                    overseas_source="overseas",
+                    domestic_label="AU Main",
+                    overseas_label="XAU",
+                    domestic_last_raw=100.0,
+                    normalized_last=444.0,
+                    overseas_last=440.0,
+                    spread=4.0,
+                    spread_pct=0.009,
+                    route_detail={},
+                    errors=[],
+                ),
+                timezone_name="Asia/Shanghai",
+            )
+            repository.insert_raw_quote(
+                "AU_XAU_TEST",
+                "overseas",
+                MarketQuote(
+                    source_name="overseas",
+                    symbol="XAU",
+                    label="XAU",
+                    ts=live_overseas_ts,
+                    last=460.0,
+                    bid=459.0,
+                    ask=461.0,
+                    raw_payload="live-overseas",
+                ),
+            )
+
+            service = MonitorService(config, repository)
+
+            with mock.patch("cross_market_monitor.application.query.query_service.utc_now", return_value=live_overseas_ts):
+                payload = service.get_snapshot_summary()
+
+            snapshot = payload["snapshots"][0]
+            self.assertEqual(snapshot["overseas_last"], 460.0)
+            self.assertEqual(snapshot["spread"], 4.0)
+            self.assertTrue(snapshot["route_detail"]["off_session_overseas_only"])
 
     def test_freezes_fx_to_domestic_timestamp_when_domestic_quote_is_stale(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

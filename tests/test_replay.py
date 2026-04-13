@@ -172,6 +172,63 @@ class ReplayAnalyzerTests(unittest.TestCase):
             self.assertAlmostEqual(report["latest_spread_pct"], 0.012)
             self.assertAlmostEqual(report["spread_pct_mean"], (0.0075 + 0.009 + 0.0105 + 0.012) / 4)
 
+    def test_replay_report_filters_out_non_session_samples(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repository = SQLiteRepository(f"{tmp_dir}/monitor.db")
+            pair = PairConfig(
+                group_name="AU_XAU",
+                domestic_source="domestic",
+                domestic_symbol="AU",
+                domestic_label="AU",
+                overseas_source="overseas",
+                overseas_symbol="XAU",
+                overseas_label="XAU",
+                formula="gold",
+                domestic_unit="CNY_PER_GRAM",
+                target_unit="USD_PER_OUNCE",
+                trading_sessions_local=["09:00-10:00", "13:30-15:00"],
+            )
+
+            rows = [
+                (datetime(2026, 3, 13, 1, 5, tzinfo=UTC), 0.010, 1.0),
+                (datetime(2026, 3, 13, 4, 0, tzinfo=UTC), 0.020, 2.0),
+                (datetime(2026, 3, 13, 5, 35, tzinfo=UTC), 0.030, 3.0),
+            ]
+            for ts, spread_pct, spread in rows:
+                repository.insert_snapshot(
+                    SpreadSnapshot(
+                        ts=ts,
+                        group_name="AU_XAU",
+                        domestic_symbol="AU",
+                        overseas_symbol="XAU",
+                        fx_source="fx",
+                        fx_rate=6.9,
+                        formula="gold",
+                        formula_version="v1",
+                        tax_mode="gross",
+                        target_unit="USD_PER_OUNCE",
+                        status="ok",
+                        normalized_last=100.0,
+                        overseas_last=100.0 + spread,
+                        spread=spread,
+                        spread_pct=spread_pct,
+                        zscore=spread,
+                    ),
+                    timezone_name="Asia/Shanghai",
+                )
+
+            analyzer = ReplayAnalyzer(
+                repository,
+                [pair],
+                bucket_minutes=15,
+                timezone_name="Asia/Shanghai",
+            )
+            report = analyzer.analyze("AU_XAU", limit=100)
+
+            self.assertEqual(report["sample_count"], 2)
+            self.assertAlmostEqual(report["latest_spread_pct"], 0.030)
+            self.assertAlmostEqual(report["spread_pct_mean"], 0.020)
+
 
 if __name__ == "__main__":
     unittest.main()

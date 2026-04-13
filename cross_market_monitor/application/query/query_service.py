@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from cross_market_monitor.application.common import variant_group_base
+from cross_market_monitor.application.common import age_seconds, is_pair_domestic_session_open, utc_now, variant_group_base
 from cross_market_monitor.application.context import ServiceContext
 from cross_market_monitor.application.control.route_preference_service import RoutePreferenceService
 from cross_market_monitor.application.history.history_service import HistoryService
@@ -126,6 +126,43 @@ class QueryService:
         payload["commodity_spec"] = build_commodity_spec(pair) if pair is not None else None
         return payload
 
+    def _snapshot_with_live_overseas_when_closed(self, snapshot: SpreadSnapshot) -> SpreadSnapshot:
+        pair = self.context.pair_map.get(snapshot.group_name)
+        if pair is None or not pair.trading_sessions_local:
+            return snapshot
+        now_utc = utc_now()
+        now_local = now_utc.astimezone(self.context.local_tz)
+        if is_pair_domestic_session_open(
+            pair,
+            now_local,
+            non_trading_dates=self.context.config.app.domestic_non_trading_dates_local,
+            weekends_closed=self.context.config.app.domestic_weekends_closed,
+        ):
+            return snapshot
+        overseas_symbol = snapshot.overseas_symbol or pair.overseas_symbol
+        latest_overseas = self.context.repository.load_latest_raw_quote_before(
+            snapshot.group_name,
+            "overseas",
+            overseas_symbol,
+            now_utc,
+        )
+        if latest_overseas is None:
+            return snapshot
+        route_detail = dict(snapshot.route_detail)
+        route_detail["off_session_overseas_only"] = True
+        return snapshot.model_copy(
+            update={
+                "overseas_source": latest_overseas.source_name,
+                "overseas_symbol": latest_overseas.symbol,
+                "overseas_label": latest_overseas.label,
+                "overseas_last": latest_overseas.last,
+                "overseas_bid": latest_overseas.bid,
+                "overseas_ask": latest_overseas.ask,
+                "overseas_age_sec": age_seconds(latest_overseas.ts),
+                "route_detail": route_detail,
+            }
+        )
+
     def get_health(self) -> dict:
         snapshots = self._current_snapshots(self.context.dashboard_pairs)
         runtime_state = self._current_runtime_state(snapshots)
@@ -168,7 +205,10 @@ class QueryService:
         return health
 
     def get_snapshot_summary(self) -> dict:
-        snapshots = self._current_snapshots(self.context.dashboard_pairs)
+        snapshots = {
+            group_name: self._snapshot_with_live_overseas_when_closed(snapshot)
+            for group_name, snapshot in self._current_snapshots(self.context.dashboard_pairs).items()
+        }
         return {
             "as_of": self._current_last_poll_finished_at(snapshots),
             "health": self.get_health(),
@@ -188,7 +228,7 @@ class QueryService:
         snapshot = snapshots.get(group_name)
         if snapshot is None:
             return None
-        return self._snapshot_payload(snapshot)
+        return self._snapshot_payload(self._snapshot_with_live_overseas_when_closed(snapshot))
 
     def get_snapshot(self, *, include_cards: bool = False) -> dict:
         summary = self.get_snapshot_summary()

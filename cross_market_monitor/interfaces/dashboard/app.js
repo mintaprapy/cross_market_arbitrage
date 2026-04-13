@@ -1372,7 +1372,7 @@
         <article class="card detail-placeholder">
           <div class="head">
             <div class="title">
-              <strong>详情图表</strong>
+              ${buildActiveCardSelector()}
               <span>首屏仅加载摘要，点击上方交易对后再加载图表和详细指标。</span>
             </div>
           </div>
@@ -1383,6 +1383,24 @@
 
     function renderReplayPlaceholder(message = "点击上方标的查看对应回放研究。") {
       document.getElementById("replay").innerHTML = `<tr><td colspan="8" class="muted">${escapeHtml(message)}</td></tr>`;
+    }
+
+    function buildActiveCardSelector(activeGroupName = null) {
+      const groups = (LAST_CARD_GROUPS || []).filter((cardGroup) => cardGroup?.selected_item);
+      if (!groups.length) {
+        return `<strong>详情图表</strong>`;
+      }
+      const active = activeGroupName || ACTIVE_CARD_GROUP_NAME || groups[0].selected_item.group_name;
+      const options = groups.map((cardGroup) => {
+        const value = cardGroup.selected_item.group_name;
+        const selected = value === active ? " selected" : "";
+        return `<option value="${escapeHtml(value)}"${selected}>${escapeHtml(cardGroup.display_name || displayNameForGroup(cardGroup.card_key || value))}</option>`;
+      }).join("");
+      return `
+        <select class="title-select" data-action="active-card-change">
+          ${options}
+        </select>
+      `;
     }
 
     function buildVariantSelector(cardGroup) {
@@ -1680,7 +1698,7 @@
         <article class="card" id="${buildCardElementId(cardGroup.card_key)}" data-group-name="${escapeHtml(item.group_name)}">
           <div class="head">
             <div class="title">
-              <strong>${escapeHtml(cardGroup.display_name)}</strong>
+              ${buildActiveCardSelector(item.group_name)}
               <span>国内：${escapeHtml(item.domestic_label || item.domestic_symbol)} ｜ 海外：${escapeHtml(item.overseas_label || item.overseas_symbol)}</span>
             </div>
             <span class="status ${escapeHtml(item.status)}" data-card-field="status">${escapeHtml(statusLabel(item.status))}</span>
@@ -2195,6 +2213,10 @@
       }
       if (actionTarget.dataset.action === "overseas-route-change") {
         handleOverseasRouteChange(actionTarget.dataset.groupName, actionTarget.value);
+        return;
+      }
+      if (actionTarget.dataset.action === "active-card-change") {
+        handleOpenCard(actionTarget.value);
       }
     });
 

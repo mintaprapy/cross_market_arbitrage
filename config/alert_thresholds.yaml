@@ -1,7 +1,17 @@
 # 说明:
-# 1. 这里只放通知阈值, 不放行情质量/暂停之类的运行阈值
-# 2. 空值表示关闭该类通知
-# 3. 百分比推荐直接写 2% 或 0.02, 也兼容 2 % / -1.5 %
+# 1. 这里只放通知相关配置
+# 2. alert_thresholds 放交易对阈值
+# 3. notification_policy 放通知频率/延迟
+# 4. 空值表示关闭该类通知
+# 5. 百分比推荐直接写 2% 或 0.02, 也兼容 2 % / -1.5 %
+notification_policy:
+  fx_alert_cooldown_seconds: 300
+  pair_defaults:
+    alert_cooldown_seconds: 300
+    data_quality_alert_cooldown_seconds: 300
+    data_quality_alert_delay_sec: 30
+  pairs: {}
+
 alert_thresholds:
   AU_XAU:
     spread_above:

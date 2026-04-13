@@ -390,14 +390,7 @@ class AlertService:
     ) -> AlertEvent | None:
         key = (self.issue_group_key(group_name, category), category)
         previous = self.context.cooldowns.get(key)
-        cooldown = next(
-            (
-                pair.thresholds.alert_cooldown_seconds
-                for pair in self.context.config.pairs
-                if pair.group_name == group_name or data_quality_group_name(pair.group_name) == group_name
-            ),
-            300,
-        )
+        cooldown = self.cooldown_seconds_for_alert(group_name, category)
         if previous and (ts - previous).total_seconds() < cooldown:
             return None
 
@@ -410,6 +403,24 @@ class AlertService:
             message=message,
             metadata=metadata,
         )
+
+    def cooldown_seconds_for_alert(self, group_name: str, category: str) -> int:
+        if category == "fx":
+            return int(self.context.config.app.fx_alert_cooldown_seconds)
+
+        matching_pair = next(
+            (
+                pair
+                for pair in self.context.config.pairs
+                if pair.group_name == group_name or data_quality_group_name(pair.group_name) == group_name
+            ),
+            None,
+        )
+        if matching_pair is None:
+            return 300
+        if category == "data_quality" and matching_pair.thresholds.data_quality_alert_cooldown_seconds is not None:
+            return int(matching_pair.thresholds.data_quality_alert_cooldown_seconds)
+        return int(matching_pair.thresholds.alert_cooldown_seconds)
 
     async def dispatch_alerts(self, alerts: list[AlertEvent]) -> None:
         if not alerts or not self.context.notifiers:

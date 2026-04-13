@@ -1775,6 +1775,101 @@ class MonitorServiceTests(unittest.TestCase):
             self.assertEqual(len(alerts), 1)
             self.assertEqual(alerts[0].category, "data_quality")
 
+    def test_can_configure_separate_cooldowns_for_data_quality_and_fx(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repository = SQLiteRepository(f"{tmp_dir}/monitor.db")
+            config = MonitorConfig.model_validate(
+                {
+                    "app": {
+                        "name": "test",
+                        "fx_source": "fx",
+                        "fx_alert_cooldown_seconds": 900,
+                        "sqlite_path": f"{tmp_dir}/monitor.db",
+                    },
+                    "sources": {
+                        "domestic": {"kind": "mock_quote", "base_url": "http://local"},
+                        "overseas": {"kind": "mock_quote", "base_url": "http://local"},
+                        "fx": {"kind": "mock_fx", "base_url": "http://local"},
+                    },
+                    "pairs": [
+                        {
+                            "group_name": "AU_XAU_TEST",
+                            "domestic_source": "domestic",
+                            "domestic_symbol": "nf_AU0",
+                            "domestic_label": "AU Main",
+                            "overseas_source": "overseas",
+                            "overseas_symbol": "XAUUSDT",
+                            "overseas_label": "Binance XAU",
+                            "formula": "gold",
+                            "domestic_unit": "CNY_PER_GRAM",
+                            "target_unit": "USD_PER_OUNCE",
+                            "thresholds": {
+                                "alert_cooldown_seconds": 300,
+                                "data_quality_alert_cooldown_seconds": 30,
+                            },
+                        }
+                    ],
+                }
+            )
+            service = MonitorService(config, repository)
+            started_at = datetime(2026, 3, 13, 3, 0, tzinfo=UTC)
+
+            first_data_quality = service.alert_service.make_alert(
+                started_at,
+                "AU_XAU_TEST",
+                "data_quality",
+                "warning",
+                "dq",
+                {},
+            )
+            second_data_quality = service.alert_service.make_alert(
+                started_at + timedelta(seconds=60),
+                "AU_XAU_TEST",
+                "data_quality",
+                "warning",
+                "dq",
+                {},
+            )
+            first_fx = service.alert_service.make_alert(
+                started_at,
+                "FX",
+                "fx",
+                "warning",
+                "fx",
+                {},
+            )
+            second_fx = service.alert_service.make_alert(
+                started_at + timedelta(seconds=60),
+                "FX",
+                "fx",
+                "warning",
+                "fx",
+                {},
+            )
+            first_zscore = service.alert_service.make_alert(
+                started_at,
+                "AU_XAU_TEST",
+                "zscore",
+                "warning",
+                "z",
+                {},
+            )
+            second_zscore = service.alert_service.make_alert(
+                started_at + timedelta(seconds=60),
+                "AU_XAU_TEST",
+                "zscore",
+                "warning",
+                "z",
+                {},
+            )
+
+            self.assertIsNotNone(first_data_quality)
+            self.assertIsNotNone(second_data_quality)
+            self.assertIsNotNone(first_fx)
+            self.assertIsNone(second_fx)
+            self.assertIsNotNone(first_zscore)
+            self.assertIsNone(second_zscore)
+
     def test_retention_service_compacts_timeseries_and_keeps_latest_snapshot(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             repository = SQLiteRepository(f"{tmp_dir}/monitor.db")

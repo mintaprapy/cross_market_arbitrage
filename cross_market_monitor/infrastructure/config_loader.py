@@ -12,6 +12,7 @@ def load_config(path: str | Path) -> MonitorConfig:
     raw = _load_raw_config(config_path)
     raw = _merge_pair_enabled(raw)
     raw = _merge_alert_thresholds(raw)
+    raw = _merge_notification_policy(raw)
     raw = _merge_trading_calendar(raw, config_path)
     config = MonitorConfig.model_validate(raw)
 
@@ -211,3 +212,70 @@ def _merge_alert_thresholds(raw: dict | None) -> dict:
 
     payload["pairs"] = pairs
     return payload
+
+
+_NOTIFICATION_POLICY_PAIR_KEYS = {
+    "alert_cooldown_seconds",
+    "data_quality_alert_cooldown_seconds",
+    "data_quality_alert_delay_sec",
+    "stale_alert_grace_sec",
+}
+
+
+def _merge_notification_policy(raw: dict | None) -> dict:
+    payload = dict(raw or {})
+    notification_policy = payload.pop("notification_policy", None)
+    if not notification_policy:
+        return payload
+    if not isinstance(notification_policy, dict):
+        raise ValueError("notification_policy must be a mapping")
+
+    app = dict(payload.get("app") or {})
+    fx_cooldown = notification_policy.get("fx_alert_cooldown_seconds")
+    if fx_cooldown is not None:
+        app["fx_alert_cooldown_seconds"] = fx_cooldown
+    payload["app"] = app
+
+    pairs = payload.get("pairs") or []
+    if not isinstance(pairs, list):
+        raise ValueError("pairs must be a list before merging notification_policy")
+    pair_map: dict[str, dict] = {}
+    for item in pairs:
+        if isinstance(item, dict) and isinstance(item.get("group_name"), str):
+            pair_map[item["group_name"]] = item
+
+    pair_defaults = notification_policy.get("pair_defaults") or {}
+    if pair_defaults and not isinstance(pair_defaults, dict):
+        raise ValueError("notification_policy.pair_defaults must be a mapping")
+    pair_overrides = notification_policy.get("pairs") or {}
+    if pair_overrides and not isinstance(pair_overrides, dict):
+        raise ValueError("notification_policy.pairs must be a mapping")
+
+    if pair_defaults:
+        _apply_notification_policy_thresholds(pair_defaults, pair_map.values(), scope="notification_policy.pair_defaults")
+    for group_name, values in pair_overrides.items():
+        if not isinstance(group_name, str):
+            raise ValueError("notification_policy.pairs keys must be group names")
+        if group_name not in pair_map:
+            raise ValueError(f"notification_policy references unknown pair: {group_name}")
+        if not isinstance(values, dict):
+            raise ValueError(f"notification_policy.pairs[{group_name}] must be a mapping")
+        _apply_notification_policy_thresholds(
+            values,
+            [pair_map[group_name]],
+            scope=f"notification_policy.pairs[{group_name}]",
+        )
+
+    payload["pairs"] = pairs
+    return payload
+
+
+def _apply_notification_policy_thresholds(values: dict, targets, *, scope: str) -> None:
+    for key in values:
+        if key not in _NOTIFICATION_POLICY_PAIR_KEYS:
+            raise ValueError(f"Unsupported notification policy key in {scope}: {key}")
+    for pair_item in targets:
+        pair_thresholds = dict(pair_item.get("thresholds") or {})
+        for key, value in values.items():
+            pair_thresholds[key] = value
+        pair_item["thresholds"] = pair_thresholds

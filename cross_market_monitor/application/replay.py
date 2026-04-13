@@ -196,8 +196,8 @@ class ReplayAnalyzer:
         batch_size = max(limit * 4, 1000)
         offset = 0
         raw_rows_desc: list[dict] = []
-        bucket_keys: set[datetime] = set()
-        while len(bucket_keys) < limit:
+        filtered_count = 0
+        while filtered_count < limit:
             batch = self.repository.fetch_snapshots(
                 group_name=group_name,
                 limit=batch_size,
@@ -207,10 +207,13 @@ class ReplayAnalyzer:
             if not batch:
                 break
             raw_rows_desc.extend(batch)
-            for row in batch:
-                bucket_key = _bucket_key(row, self.bucket_minutes)
-                if bucket_key is not None:
-                    bucket_keys.add(bucket_key)
+            rows = list(reversed(raw_rows_desc))
+            bucketed_rows = [
+                row
+                for row in _bucket_rows(rows, self.bucket_minutes)
+                if self._row_in_domestic_session(pair, row)
+            ]
+            filtered_count = len(bucketed_rows)
             offset += len(batch)
             if len(batch) < batch_size:
                 break

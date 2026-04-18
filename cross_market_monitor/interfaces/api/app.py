@@ -27,7 +27,12 @@ def render_dashboard_html(title: str) -> str:
     return _dashboard_template().replace("__APP_TITLE__", title)
 
 
-def create_app(service: MonitorService, *, run_runtime: bool = True) -> FastAPI:
+def create_app(
+    service: MonitorService,
+    *,
+    run_runtime: bool = True,
+    serve_dashboard: bool = True,
+) -> FastAPI:
     @asynccontextmanager
     async def lifespan(_: FastAPI):
         if not run_runtime:
@@ -48,10 +53,11 @@ def create_app(service: MonitorService, *, run_runtime: bool = True) -> FastAPI:
     app.include_router(build_market_router(service))
     app.include_router(build_ops_router(service))
     app.include_router(build_control_router(service))
-    app.mount("/dashboard", StaticFiles(directory=DASHBOARD_DIR), name="dashboard")
+    if serve_dashboard:
+        app.mount("/dashboard", StaticFiles(directory=DASHBOARD_DIR), name="dashboard")
 
-    @app.get("/", response_class=HTMLResponse)
-    async def index() -> HTMLResponse:
-        return HTMLResponse(render_dashboard_html(service.config.app.name))
+        @app.get("/", response_class=HTMLResponse)
+        async def index() -> HTMLResponse:
+            return HTMLResponse(render_dashboard_html(service.config.app.name))
 
     return app

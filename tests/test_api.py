@@ -79,6 +79,46 @@ class ApiTests(unittest.TestCase):
             self.assertIn("--bg", css_path.read_text(encoding="utf-8"))
             self.assertIn("async function fetchJson", js_path.read_text(encoding="utf-8"))
 
+    def test_api_only_mode_skips_dashboard_routes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repository = SQLiteRepository(f"{tmp_dir}/monitor.db")
+            config = MonitorConfig.model_validate(
+                {
+                    "app": {
+                        "name": "API Test",
+                        "fx_source": "fx",
+                        "sqlite_path": f"{tmp_dir}/monitor.db",
+                    },
+                    "sources": {
+                        "domestic": {"kind": "mock_quote", "base_url": "http://local"},
+                        "overseas": {"kind": "mock_quote", "base_url": "http://local"},
+                        "fx": {"kind": "mock_fx", "base_url": "http://local"},
+                    },
+                    "pairs": [
+                        {
+                            "group_name": "AU_XAU",
+                            "domestic_source": "domestic",
+                            "domestic_symbol": "nf_AU0",
+                            "domestic_label": "AU Main",
+                            "overseas_source": "overseas",
+                            "overseas_symbol": "XAUUSDT",
+                            "overseas_label": "Binance XAU",
+                            "formula": "gold",
+                            "domestic_unit": "CNY_PER_GRAM",
+                            "target_unit": "USD_PER_OUNCE",
+                        }
+                    ],
+                }
+            )
+            service = MonitorService(config, repository)
+            app = create_app(service, run_runtime=False, serve_dashboard=False)
+            routes_by_path = {route.path: route for route in app.routes}
+
+            self.assertNotIn("/", routes_by_path)
+            self.assertNotIn("/dashboard", routes_by_path)
+            self.assertIn("/api/health", routes_by_path)
+            self.assertIn("/api/snapshot-summary", routes_by_path)
+
     def test_runtime_mode_polls_once_before_background_start(self) -> None:
         service = mock.Mock()
         service.config.app.name = "API Test"

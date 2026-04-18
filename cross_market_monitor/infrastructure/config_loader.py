@@ -10,6 +10,7 @@ from cross_market_monitor.domain.models import MonitorConfig
 def load_config(path: str | Path) -> MonitorConfig:
     config_path = Path(path).resolve()
     raw = _load_raw_config(config_path)
+    raw = _merge_pair_overrides(raw)
     raw = _merge_pair_enabled(raw)
     raw = _merge_alert_thresholds(raw)
     raw = _merge_notification_policy(raw)
@@ -154,6 +155,38 @@ def _merge_pair_enabled(raw: dict | None) -> dict:
         if not isinstance(enabled, bool):
             raise ValueError(f"pair_enabled[{group_name}] must be a boolean")
         pair_map[group_name]["dashboard_enabled"] = enabled
+
+    payload["pairs"] = pairs
+    return payload
+
+
+def _merge_pair_overrides(raw: dict | None) -> dict:
+    payload = dict(raw or {})
+    pair_overrides = payload.pop("pair_overrides", None)
+    if not pair_overrides:
+        return payload
+    if not isinstance(pair_overrides, dict):
+        raise ValueError("pair_overrides must be a mapping")
+
+    pairs = payload.get("pairs") or []
+    if not isinstance(pairs, list):
+        raise ValueError("pairs must be a list before merging pair_overrides")
+
+    pair_map: dict[str, dict] = {}
+    for item in pairs:
+        if isinstance(item, dict) and isinstance(item.get("group_name"), str):
+            pair_map[item["group_name"]] = item
+
+    for group_name, values in pair_overrides.items():
+        if not isinstance(group_name, str):
+            raise ValueError("pair_overrides keys must be group names")
+        if group_name not in pair_map:
+            raise ValueError(f"pair_overrides references unknown pair: {group_name}")
+        if not isinstance(values, dict):
+            raise ValueError(f"pair_overrides[{group_name}] must be a mapping")
+        merged_pair = _deep_merge(pair_map[group_name], values)
+        pair_map[group_name].clear()
+        pair_map[group_name].update(merged_pair)
 
     payload["pairs"] = pairs
     return payload

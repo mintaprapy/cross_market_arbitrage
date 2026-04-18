@@ -65,7 +65,7 @@ class MainTests(unittest.TestCase):
             "config/monitor.yaml",
             preload_spread_windows=False,
         )
-        create_app.assert_called_once_with(service, run_runtime=True)
+        create_app.assert_called_once_with(service, run_runtime=True, serve_dashboard=True)
         uvicorn_run.assert_called_once()
 
 

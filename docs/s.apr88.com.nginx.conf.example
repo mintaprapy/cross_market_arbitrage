@@ -1,0 +1,50 @@
+proxy_cache_path /var/cache/nginx/cross_market_monitor levels=1:2 keys_zone=cross_market_monitor_cache:20m max_size=200m inactive=10m use_temp_path=off;
+
+server {
+    listen 443 ssl http2;
+    server_name s.apr88.com;
+
+    root /srv/cross_market_arbitrage/cross_market_monitor/interfaces/dashboard;
+    index index.html;
+
+    location = / {
+        try_files /index.html =404;
+        add_header Cache-Control "no-cache";
+    }
+
+    location /dashboard/ {
+        alias /srv/cross_market_arbitrage/cross_market_monitor/interfaces/dashboard/;
+        add_header Cache-Control "public, max-age=300";
+    }
+
+    location /summary/ {
+        alias /srv/cross_market_arbitrage/exports/summary/;
+        add_header Cache-Control "no-cache";
+    }
+
+    location = /api/snapshot-summary {
+        proxy_pass http://127.0.0.1:6080;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_connect_timeout 2s;
+        proxy_send_timeout 15s;
+        proxy_read_timeout 15s;
+        proxy_cache cross_market_monitor_cache;
+        proxy_cache_valid 200 5s;
+        proxy_cache_use_stale error timeout invalid_header updating http_500 http_502 http_503 http_504;
+        add_header X-Cache-Status $upstream_cache_status;
+    }
+
+    location /api/ {
+        proxy_pass http://127.0.0.1:6080;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_connect_timeout 2s;
+        proxy_send_timeout 15s;
+        proxy_read_timeout 15s;
+    }
+}

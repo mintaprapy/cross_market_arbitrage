@@ -330,6 +330,99 @@ class ConfigLoaderTests(unittest.TestCase):
             self.assertTrue(config.pairs[0].enabled)
             self.assertFalse(config.pairs[0].dashboard_enabled)
 
+    def test_load_config_merges_pair_overrides(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            config_dir = root / "config"
+            config_dir.mkdir(parents=True, exist_ok=True)
+            (config_dir / "app.yaml").write_text(
+                textwrap.dedent(
+                    """
+                    app:
+                      name: split
+                      fx_source: fx
+                      sqlite_path: data/monitor.db
+                    """
+                ).strip() + "\n",
+                encoding="utf-8",
+            )
+            (config_dir / "sources.yaml").write_text(
+                textwrap.dedent(
+                    """
+                    sources:
+                      domestic:
+                        kind: mock_quote
+                        base_url: http://local
+                      overseas:
+                        kind: mock_quote
+                        base_url: http://local
+                      fx:
+                        kind: mock_fx
+                        base_url: http://local
+                    """
+                ).strip() + "\n",
+                encoding="utf-8",
+            )
+            (config_dir / "pairs.yaml").write_text(
+                textwrap.dedent(
+                    """
+                    pairs:
+                      - group_name: AU_XAU_TEST
+                        domestic_source: domestic
+                        domestic_symbol: nf_AU0
+                        domestic_label: AU Main
+                        overseas_source: overseas
+                        overseas_symbol: XAU
+                        overseas_label: XAU
+                        overseas_candidates:
+                          - source: overseas
+                            symbol: XAU
+                            label: XAU
+                          - source: overseas
+                            symbol: XAU_ALT
+                            label: XAU ALT
+                        formula: gold
+                        domestic_unit: CNY_PER_GRAM
+                        target_unit: USD_PER_OUNCE
+                        enabled: true
+                    """
+                ).strip() + "\n",
+                encoding="utf-8",
+            )
+            (config_dir / "pairs.local.yaml").write_text(
+                textwrap.dedent(
+                    """
+                    pair_overrides:
+                      AU_XAU_TEST:
+                        enabled: false
+                        overseas_candidates:
+                          - source: overseas
+                            symbol: XAU
+                            label: XAU
+                    """
+                ).strip() + "\n",
+                encoding="utf-8",
+            )
+            (config_dir / "monitor.yaml").write_text(
+                textwrap.dedent(
+                    """
+                    imports:
+                      - app.yaml
+                      - sources.yaml
+                      - pairs.yaml
+                      - pairs.local.yaml
+                    """
+                ).strip() + "\n",
+                encoding="utf-8",
+            )
+
+            config = load_config(config_dir / "monitor.yaml")
+
+            self.assertEqual(len(config.pairs), 1)
+            self.assertFalse(config.pairs[0].enabled)
+            self.assertEqual(len(config.pairs[0].overseas_candidates), 1)
+            self.assertEqual(config.pairs[0].overseas_candidates[0].symbol, "XAU")
+
     def test_load_config_merges_notification_policy(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)

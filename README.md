@@ -126,6 +126,40 @@ sudo nginx -t
 sudo systemctl reload nginx
 ```
 
+## s.apr88.com 推荐部署形态
+
+如果 `s.apr88.com` 要提高可用性，建议改成：
+
+- 静态前端：Nginx 直接提供 [cross_market_monitor/interfaces/dashboard](/Users/m2/Desktop/Codex2026/cross_market_arbitrage/cross_market_monitor/interfaces/dashboard)
+- 独立 API：`run-api --api-only`
+- 独立 worker：`run-worker`
+- 摘要兜底：worker 每轮写 `exports/summary/latest.json`
+
+推荐使用：
+
+```bash
+sudo cp systemd/cross-market-monitor-worker.service /etc/systemd/system/cross-market-monitor-worker.service
+sudo cp systemd/cross-market-monitor-api.service /etc/systemd/system/cross-market-monitor-api.service
+sudo systemctl daemon-reload
+```
+
+然后把 API 服务的 `ExecStart` 调整为：
+
+```ini
+ExecStart=/srv/cross_market_arbitrage/.venv/bin/cross-market-monitor --config /srv/cross_market_arbitrage/config/monitor.yaml run-api --api-only --host 0.0.0.0 --port 6080
+```
+
+Nginx 可以参考：
+
+- [docs/s.apr88.com.nginx.conf.example](/Users/m2/Desktop/Codex2026/cross_market_arbitrage/docs/s.apr88.com.nginx.conf.example)
+
+这套部署下：
+
+- `/` 和 `/dashboard/*` 由 Nginx 直接返回静态文件
+- `/api/*` 单独反代到 `127.0.0.1:6080`
+- `/summary/latest.json` 由 Nginx 直接返回 worker 写出的静态摘要
+- 当前端访问 `/api/snapshot-summary` 失败时，会自动回退到 `/summary/latest.json`
+
 ## 当前覆盖
 
 - 黄金：`AU_XAU`

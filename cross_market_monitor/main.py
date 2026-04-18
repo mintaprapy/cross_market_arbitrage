@@ -335,6 +335,11 @@ def main() -> None:
     api_parser = subparsers.add_parser("run-api", help="Run FastAPI dashboard and API")
     api_parser.add_argument("--host", default=None, help="Bind host")
     api_parser.add_argument("--port", type=int, default=None, help="Bind port")
+    api_parser.add_argument(
+        "--api-only",
+        action="store_true",
+        help="Serve API only without dashboard HTML/static routes",
+    )
 
     export_parser = subparsers.add_parser("export-csv", help="Export stored data into CSV")
     export_parser.add_argument(
@@ -495,7 +500,11 @@ def main() -> None:
         args.config,
         preload_spread_windows=args.command not in {"run-api", "serve"},
     )
-    app = create_app(service, run_runtime=args.command != "run-api")
+    app = create_app(
+        service,
+        run_runtime=args.command != "run-api",
+        serve_dashboard=not getattr(args, "api_only", False),
+    )
     host = args.host or service.config.app.bind_host
     port = args.port or service.config.app.bind_port
     uvicorn.run(

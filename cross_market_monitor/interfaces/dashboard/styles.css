@@ -67,6 +67,11 @@
       text-align: center;
       white-space: nowrap;
     }
+    .pill.pill-warn {
+      color: var(--warn);
+      border-color: rgba(255, 180, 84, 0.25);
+      background: rgba(255, 180, 84, 0.08);
+    }
     .fx-override-panel {
       display: inline-flex;
       flex: 0 1 auto;

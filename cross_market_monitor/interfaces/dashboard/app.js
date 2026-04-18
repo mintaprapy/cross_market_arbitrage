@@ -6,6 +6,26 @@
       return await response.json();
     }
 
+    async function fetchSnapshotSummaryWithFallback() {
+      try {
+        const payload = await fetchJson("/api/snapshot-summary");
+        return {
+          payload: {
+            ...payload,
+            _snapshot_source: "api",
+          },
+          fallback: false,
+        };
+      } catch (apiError) {
+        const fallbackPayload = await fetchJson("/summary/latest.json");
+        return {
+          payload: fallbackPayload,
+          fallback: true,
+          apiError,
+        };
+      }
+    }
+
     async function postJson(url, payload) {
       const response = await fetch(url, {
         method: "POST",
@@ -1920,12 +1940,16 @@
     function buildMetaMarkup(snapshot) {
       const liveFxRate = toFiniteNumber(snapshot?.health?.latest_fx_rate);
       const appliedFxRate = displayFxRate(snapshot?.health);
+      const fallbackPill = snapshot?._snapshot_source === "summary-cache"
+        ? `<span class="pill pill-warn">静态摘要兜底：${escapeHtml(formatDateTime(snapshot?._generated_at || snapshot?.as_of))}</span>`
+        : "";
       return `
         <span class="pill">${escapeHtml(formatDateTime(snapshot.as_of))} | ${snapshot.health.poll_interval_sec} 秒</span>
         <span class="pill">实时汇率：${formatNumber(liveFxRate, 4)}</span>
         <span class="pill">自定汇率：${formatNumber(appliedFxRate, 4)}</span>
         <span class="pill">汇率源：${escapeHtml(customFxActive() ? "自定" : sourceDisplayName(snapshot.health.latest_fx_source))}</span>
         <span class="pill">汇率模式：${customFxActive() ? "固定" : (snapshot.health.fx_is_frozen ? "冻结" : (snapshot.health.fx_is_live ? "实时" : "--"))}</span>
+        ${fallbackPill}
         <div class="fx-override-panel">
           <div class="fx-override-head">
             <strong>自定汇率</strong>
@@ -2054,7 +2078,7 @@
     }
 
     async function load() {
-      const snapshot = await fetchJson("/api/snapshot-summary");
+      const { payload: snapshot, fallback } = await fetchSnapshotSummaryWithFallback();
       LAST_SNAPSHOT_PAYLOAD = snapshot;
       document.getElementById("meta").innerHTML = buildMetaMarkup(snapshot);
 
@@ -2072,10 +2096,17 @@
           renderCardsPlaceholder();
         }
         applySnapshotSummaryToCards(cardGroups);
-        await refreshActiveCardGroup();
+        if (!fallback) {
+          await refreshActiveCardGroup();
+        }
       }
 
-      refreshReplayRows(cardGroups).catch(() => {});
+      if (!fallback) {
+        refreshReplayRows(cardGroups).catch(() => {});
+      }
+      if (fallback) {
+        renderCardsPlaceholder("API 暂时不可用，当前显示静态摘要缓存。");
+      }
 
       document.getElementById("sources").innerHTML = (snapshot.health.sources || []).map((item) => `
         <tr>

@@ -1,0 +1,47 @@
+pair_overrides:
+  AU_XAU:
+    overseas_candidates:
+      - source: binance_futures
+        symbol: XAUUSDT
+        label: Binance XAUUSDT Perpetual
+  AG_XAG_GROSS:
+    overseas_candidates:
+      - source: binance_futures
+        symbol: XAGUSDT
+        label: Binance XAGUSDT Perpetual
+  AG_XAG_NET:
+    overseas_candidates:
+      - source: binance_futures
+        symbol: XAGUSDT
+        label: Binance XAGUSDT Perpetual
+  CU_COPPER_GROSS:
+    overseas_candidates:
+      - source: binance_futures
+        symbol: COPPERUSDT
+        label: Binance COPPERUSDT Perpetual
+  CU_COPPER_NET:
+    overseas_candidates:
+      - source: binance_futures
+        symbol: COPPERUSDT
+        label: Binance COPPERUSDT Perpetual
+  BC_COPPER:
+    overseas_candidates:
+      - source: binance_futures
+        symbol: COPPERUSDT
+        label: Binance COPPERUSDT Perpetual
+  SC_CL:
+    overseas_source: binance_futures
+    overseas_symbol: CLUSDT
+    overseas_label: Binance CLUSDT Perpetual
+    overseas_candidates:
+      - source: binance_futures
+        symbol: CLUSDT
+        label: Binance CLUSDT Perpetual
+  AL_ALUMINIUM:
+    enabled: false
+  B_SOYBEAN:
+    enabled: false
+  CF_COTTON:
+    enabled: false
+  SR_SUGAR:
+    enabled: false

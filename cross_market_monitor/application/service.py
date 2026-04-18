@@ -15,6 +15,7 @@ from cross_market_monitor.application.monitor.quote_router import QuoteRouter
 from cross_market_monitor.application.monitor.runtime import MonitorRuntime, RuntimeService
 from cross_market_monitor.application.monitor.snapshot_builder import SnapshotBuilder
 from cross_market_monitor.application.monitor.source_health import SourceHealthRecorder
+from cross_market_monitor.application.monitor.summary_cache import SummaryCacheService
 from cross_market_monitor.application.monitor.telegram_command_service import TelegramCommandService
 from cross_market_monitor.application.query.query_service import QueryService
 from cross_market_monitor.application.replay import ReplayAnalyzer
@@ -201,6 +202,7 @@ class MonitorService:
         )
         self.poll_cycle = PollCycleService(self.context, self.fx_service, self.snapshot_builder)
         self.query = QueryService(self.context, self.route_preferences, self.history)
+        self.summary_cache = SummaryCacheService(self.query, self.config.app.export_dir)
         self.telegram_commands = TelegramCommandService(self.context, self.query)
         self.runtime = RuntimeService(
             self.context,
@@ -208,6 +210,7 @@ class MonitorService:
             self.retention,
             self.poll_cycle,
             self.telegram_commands,
+            self.summary_cache,
         )
 
         self._preload_cached_state()

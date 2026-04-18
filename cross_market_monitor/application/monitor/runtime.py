@@ -21,12 +21,14 @@ class RuntimeService:
         retention: RetentionService,
         poll_cycle: PollCycleService,
         telegram_commands,
+        summary_cache,
     ) -> None:
         self.context = context
         self.history = history
         self.retention = retention
         self.poll_cycle = poll_cycle
         self.telegram_commands = telegram_commands
+        self.summary_cache = summary_cache
 
     def _clear_disabled_group_snapshots(self) -> None:
         enabled_group_names = {pair.group_name for pair in self.context.enabled_pairs}
@@ -54,6 +56,7 @@ class RuntimeService:
         while not self.context.stop_event.is_set():
             try:
                 await self.poll_cycle.poll_once()
+                await asyncio.to_thread(self.summary_cache.write_latest_summary)
             except Exception:  # pragma: no cover - background task guard
                 LOGGER.exception("Polling cycle failed")
             try:
@@ -87,6 +90,10 @@ class RuntimeService:
         self.context.startup_completed = True
         self._clear_disabled_group_snapshots()
         self.context.repository.upsert_runtime_state(build_worker_runtime_state(self.context))
+        try:
+            await asyncio.to_thread(self.summary_cache.write_latest_summary)
+        except Exception:  # pragma: no cover - startup guard
+            LOGGER.exception("Initial summary cache write failed")
         if self.telegram_commands.enabled and (
             self.context.telegram_task is None or self.context.telegram_task.done()
         ):

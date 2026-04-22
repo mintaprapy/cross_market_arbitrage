@@ -136,10 +136,9 @@ class TelegramCommandServiceTests(unittest.TestCase):
 
         self.assertEqual(response.text, "请选择交易对：")
         buttons = response.reply_markup["inline_keyboard"]
-        self.assertEqual(buttons[0][0]["text"], "AU_XAU")
-        self.assertEqual(buttons[0][0]["callback_data"], "pair:AU_XAU")
-        self.assertEqual(buttons[1][0]["text"], "CU_COPPER")
-        self.assertEqual(buttons[2][0]["text"], "CU_COPPER除税")
+        self.assertEqual(len(buttons), 1)
+        self.assertEqual([item["text"] for item in buttons[0]], ["AU_XAU", "CU_COPPER", "CU_COPPER除税"])
+        self.assertEqual([item["callback_data"] for item in buttons[0]], ["pair:AU_XAU", "pair:CU_COPPER_GROSS", "pair:CU_COPPER_NET"])
 
     def test_pair_callback_returns_snapshot_text(self) -> None:
         context = build_context(

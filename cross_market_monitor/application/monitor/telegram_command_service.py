@@ -241,16 +241,17 @@ class TelegramCommandService:
         }
 
     def _query_menu_text(self) -> TelegramResponse:
-        buttons: list[list[dict[str, str]]] = []
+        items: list[dict[str, str]] = []
         seen: set[str] = set()
         for pair in self.context.enabled_pairs:
             label = display_group_name(pair.group_name)
             if label in seen:
                 continue
             seen.add(label)
-            buttons.append([{"text": label, "callback_data": f"pair:{pair.group_name}"}])
-        if not buttons:
+            items.append({"text": label, "callback_data": f"pair:{pair.group_name}"})
+        if not items:
             return TelegramResponse("当前没有可查询交易对。", reply_markup=self._main_menu_markup())
+        buttons = [items[i : i + 3] for i in range(0, len(items), 3)]
         return TelegramResponse("请选择交易对：", reply_markup={"inline_keyboard": buttons})
 
     def _help_text(self) -> str:

@@ -4112,7 +4112,7 @@ class MonitorServiceTests(unittest.TestCase):
 
             alerts = repository.fetch_alerts(limit=20)
             self.assertTrue(
-                any("main vs TqSdk shadow diverged" in alert["message"] for alert in alerts)
+                any("主链路与 TqSdk 影子链路偏差达到" in alert["message"] for alert in alerts)
             )
 
     def test_persists_normalized_domestic_history_during_poll(self) -> None:

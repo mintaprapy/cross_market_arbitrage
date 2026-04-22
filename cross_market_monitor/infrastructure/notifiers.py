@@ -9,6 +9,14 @@ from cross_market_monitor.domain.models import AlertEvent, NotifierConfig
 from cross_market_monitor.infrastructure.http_client import HttpClient
 
 SEVERITY_RANK = {"info": 1, "warning": 2, "critical": 3}
+SEVERITY_LABELS = {"info": "提示", "warning": "警告", "critical": "严重"}
+CATEGORY_LABELS = {
+    "data_quality": "数据质量",
+    "fx": "汇率",
+    "spread_level": "价差",
+    "spread_pct": "价差百分比",
+    "zscore": "Z-Score",
+}
 
 
 @dataclass(slots=True)
@@ -147,7 +155,7 @@ def alert_payload(alert: AlertEvent, timezone: ZoneInfo) -> dict:
         "timestamp": _format_local_timestamp(alert.ts, timezone),
         "timestamp_local": _format_local_timestamp(alert.ts, timezone),
         "timestamp_utc": alert.ts.astimezone(UTC).isoformat(),
-        "title": f"{title_group_name} {alert.category} {alert.severity}",
+        "title": f"{title_group_name} {category_label(alert.category)} {severity_label(alert.severity)}",
         "group_name": alert.group_name,
         "category": alert.category,
         "severity": alert.severity,
@@ -162,10 +170,18 @@ def human_notification_text(alert: AlertEvent, timezone: ZoneInfo | None = None)
     timezone = timezone or ZoneInfo("Asia/Shanghai")
     group_name = display_group_name(alert.group_name) if alert.category == "data_quality" else alert.group_name
     return (
-        f"[{alert.severity.upper()}] {group_name} {alert.category}\n"
+        f"[{severity_label(alert.severity)}] {group_name} {category_label(alert.category)}\n"
         f"{alert.message}\n"
         f"{_format_local_timestamp(alert.ts, timezone)}"
     )
+
+
+def severity_label(severity: str) -> str:
+    return SEVERITY_LABELS.get(severity, severity)
+
+
+def category_label(category: str) -> str:
+    return CATEGORY_LABELS.get(category, category)
 
 
 def build_notifier(config: NotifierConfig, timezone_name: str = "Asia/Shanghai"):

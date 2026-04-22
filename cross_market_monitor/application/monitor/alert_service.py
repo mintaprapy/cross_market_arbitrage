@@ -32,7 +32,7 @@ class AlertService:
                     pair.group_name,
                     "data_quality",
                     "critical" if snapshot.status == "error" else "warning",
-                    f"{display_group_name(pair.group_name)} data status is {snapshot.status}",
+                    f"{display_group_name(pair.group_name)} 数据状态异常：{self.status_text(snapshot.status)}",
                     {
                         "errors": snapshot.errors,
                         "domestic_age_sec": snapshot.domestic_age_sec,
@@ -66,10 +66,7 @@ class AlertService:
                     "FX",
                     "fx",
                     "warning",
-                    (
-                        f"USD/CNY FX data is stale "
-                        f"({live_fx_age_sec / 3600:.1f}h old)"
-                    ),
+                    f"USD/CNY 汇率数据已过期（{live_fx_age_sec / 3600:.1f} 小时未更新）",
                     {
                         "fx_age_sec": live_fx_age_sec,
                         "effective_fx_age_sec": snapshot.fx_age_sec,
@@ -86,7 +83,7 @@ class AlertService:
                     "FX",
                     "fx",
                     "critical",
-                    "USD/CNY FX rate is unavailable",
+                    "USD/CNY 汇率不可用",
                     {
                         "fx_source": snapshot.fx_source,
                     },
@@ -151,7 +148,7 @@ class AlertService:
                             pair.group_name,
                             "data_quality",
                             "warning",
-                            f"{pair.group_name} main vs TqSdk shadow diverged by {latest_shadow_spread_pct:.2%}",
+                            f"{display_group_name(pair.group_name)} 主链路与 TqSdk 影子链路偏差达到 {latest_shadow_spread_pct:.2%}",
                             {
                                 "main_symbol": shadow_comparison.get("main_symbol"),
                                 "shadow_symbol": shadow_comparison.get("shadow_symbol"),
@@ -277,10 +274,7 @@ class AlertService:
                     pair.group_name,
                     "zscore",
                     "warning",
-                    (
-                        f"{pair.group_name} zscore reached {snapshot.zscore:.2f}, "
-                        f"above threshold {upper:.2f}"
-                    ),
+                    f"{display_group_name(pair.group_name)} 的 Z-Score 达到 {snapshot.zscore:.2f}，高于阈值 {upper:.2f}",
                     {"zscore": snapshot.zscore, "spread": snapshot.spread, "threshold": upper},
                 )
             )
@@ -291,10 +285,7 @@ class AlertService:
                     pair.group_name,
                     "zscore",
                     "warning",
-                    (
-                        f"{pair.group_name} zscore reached {snapshot.zscore:.2f}, "
-                        f"below threshold {lower:.2f}"
-                    ),
+                    f"{display_group_name(pair.group_name)} 的 Z-Score 达到 {snapshot.zscore:.2f}，低于阈值 {lower:.2f}",
                     {"zscore": snapshot.zscore, "spread": snapshot.spread, "threshold": lower},
                 )
             )
@@ -305,11 +296,21 @@ class AlertService:
                     pair.group_name,
                     "zscore",
                     "warning",
-                    f"{pair.group_name} zscore reached {snapshot.zscore:.2f}",
+                    f"{display_group_name(pair.group_name)} 的 Z-Score 达到 {snapshot.zscore:.2f}",
                     {"zscore": snapshot.zscore, "spread": snapshot.spread, "threshold": legacy_abs},
                 )
         )
         return [alert for alert in alerts if alert is not None]
+
+    def status_text(self, status: str) -> str:
+        mapping = {
+            "ok": "正常",
+            "partial": "部分缺失",
+            "stale": "已过期",
+            "error": "错误",
+            "paused": "已暂停",
+        }
+        return mapping.get(status, status)
 
     def should_emit_data_quality_alert(self, pair: PairConfig, snapshot: SpreadSnapshot) -> bool:
         if snapshot.status == "error":

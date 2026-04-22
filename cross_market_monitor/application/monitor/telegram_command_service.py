@@ -11,6 +11,8 @@ from cross_market_monitor.infrastructure.http_client import HttpClient
 
 LOGGER = logging.getLogger("cross_market_monitor")
 TELEGRAM_API_BASE = "https://api.telegram.org"
+MENU_HELP = "查看帮助"
+MENU_QUERY = "跨市场交易查询"
 
 
 @dataclass(slots=True)
@@ -22,6 +24,12 @@ class TelegramChannel:
     timezone_name: str
     update_offset: int | None = None
     commands_registered: bool = False
+
+
+@dataclass(slots=True)
+class TelegramResponse:
+    text: str
+    reply_markup: dict | None = None
 
 
 class TelegramCommandService:
@@ -125,6 +133,21 @@ class TelegramCommandService:
             update_id = item.get("update_id")
             if isinstance(update_id, int):
                 channel.update_offset = update_id + 1
+
+            callback_query = item.get("callback_query")
+            if isinstance(callback_query, dict):
+                chat_id = str(callback_query.get("message", {}).get("chat", {}).get("id", ""))
+                if chat_id != channel.chat_id:
+                    continue
+                callback_id = callback_query.get("id")
+                data = (callback_query.get("data") or "").strip()
+                reply = self._handle_callback_data(data)
+                if callback_id:
+                    self._answer_callback(http, channel, str(callback_id))
+                if reply:
+                    self._send_message(http, channel, reply)
+                continue
+
             message = item.get("message") or item.get("edited_message")
             if not isinstance(message, dict):
                 continue
@@ -132,7 +155,7 @@ class TelegramCommandService:
             if chat_id != channel.chat_id:
                 continue
             text = (message.get("text") or "").strip()
-            if not text.startswith("/"):
+            if not text:
                 continue
             reply = self._handle_text(text)
             if reply:
@@ -143,9 +166,7 @@ class TelegramCommandService:
             return
         commands = [
             {"command": "help", "description": "查看帮助"},
-            {"command": "pairs", "description": "查看可查询交易对"},
-            {"command": "quote", "description": "查询指定交易对实时参数"},
-            {"command": "status", "description": "同 quote"},
+            {"command": "query", "description": "跨市场交易查询"},
         ]
         http.post_json(
             f"{TELEGRAM_API_BASE}/bot{channel.bot_token}/setMyCommands",
@@ -153,62 +174,103 @@ class TelegramCommandService:
         )
         channel.commands_registered = True
 
-    def _send_message(self, http: HttpClient, channel: TelegramChannel, text: str) -> None:
+    def _send_message(self, http: HttpClient, channel: TelegramChannel, response: TelegramResponse) -> None:
+        payload = {
+            "chat_id": channel.chat_id,
+            "text": response.text,
+            "disable_web_page_preview": True,
+        }
+        if response.reply_markup is not None:
+            payload["reply_markup"] = response.reply_markup
         http.post_json(
             f"{TELEGRAM_API_BASE}/bot{channel.bot_token}/sendMessage",
-            {
-                "chat_id": channel.chat_id,
-                "text": text,
-                "disable_web_page_preview": True,
-            },
+            payload,
         )
 
-    def _handle_text(self, raw_text: str) -> str | None:
+    def _answer_callback(self, http: HttpClient, channel: TelegramChannel, callback_query_id: str) -> None:
+        http.post_json(
+            f"{TELEGRAM_API_BASE}/bot{channel.bot_token}/answerCallbackQuery",
+            {"callback_query_id": callback_query_id},
+        )
+
+    def _handle_text(self, raw_text: str) -> TelegramResponse | None:
         parts = raw_text.split(maxsplit=1)
         command = parts[0].split("@", 1)[0].lower()
         arg = parts[1].strip() if len(parts) > 1 else ""
 
-        if command in {"/start", "/help"}:
-            return self._help_text()
-        if command == "/pairs":
-            return self._pairs_text()
+        if raw_text == MENU_HELP or command in {"/start", "/help"}:
+            return TelegramResponse(self._help_text(), reply_markup=self._main_menu_markup())
+        if raw_text == MENU_QUERY or command in {"/query", "/pairs"}:
+            return self._query_menu_text()
         if command in {"/quote", "/pair", "/status"}:
             if not arg:
-                return "用法: /quote <交易对>\n先发送 /pairs 查看可用交易对。"
-            return self._pair_snapshot_text(arg)
-        return "未识别命令。可用命令: /pairs, /quote <交易对>, /help"
+                return TelegramResponse(
+                    "用法: /quote <交易对>\n也可点击“跨市场交易查询”选择交易对。",
+                    reply_markup=self._main_menu_markup(),
+                )
+            return TelegramResponse(
+                self._pair_snapshot_text(arg),
+                reply_markup=self._main_menu_markup(),
+            )
+        normalized = self._normalize_alias(raw_text)
+        if normalized in self.alias_map:
+            return TelegramResponse(
+                self._pair_snapshot_text(raw_text),
+                reply_markup=self._main_menu_markup(),
+            )
+        return TelegramResponse("未识别操作。请使用下方菜单。", reply_markup=self._main_menu_markup())
 
-    def _help_text(self) -> str:
-        return (
-            "可用命令:\n"
-            "/pairs - 查看可查询交易对\n"
-            "/quote <交易对> - 查看实时价差百分比与关键参数\n"
-            "/status <交易对> - 同 /quote\n"
-            "\n"
-            "示例:\n"
-            "/quote AU_XAU\n"
-            "/quote CU_COPPER\n"
-            "/quote CU_COPPER除税"
-        )
+    def _handle_callback_data(self, data: str) -> TelegramResponse | None:
+        if not data:
+            return None
+        if data.startswith("pair:"):
+            group_name = data.split(":", 1)[1].strip()
+            if group_name not in self.context.pair_map:
+                return TelegramResponse("未识别交易对。", reply_markup=self._main_menu_markup())
+            return TelegramResponse(
+                self._pair_snapshot_text(group_name),
+                reply_markup=self._main_menu_markup(),
+            )
+        return TelegramResponse("未识别菜单操作。", reply_markup=self._main_menu_markup())
 
-    def _pairs_text(self) -> str:
-        lines = ["可查询交易对:"]
+    def _main_menu_markup(self) -> dict:
+        return {
+            "keyboard": [[{"text": MENU_HELP}, {"text": MENU_QUERY}]],
+            "resize_keyboard": True,
+            "is_persistent": True,
+        }
+
+    def _query_menu_text(self) -> TelegramResponse:
+        buttons: list[list[dict[str, str]]] = []
         seen: set[str] = set()
         for pair in self.context.enabled_pairs:
             label = display_group_name(pair.group_name)
             if label in seen:
                 continue
             seen.add(label)
-            base = variant_group_base(pair.group_name)
-            lines.append(f"- {label} ({base})")
-        lines.append("")
-        lines.append("查询示例: /quote AU_XAU")
-        return "\n".join(lines)
+            buttons.append([{"text": label, "callback_data": f"pair:{pair.group_name}"}])
+        if not buttons:
+            return TelegramResponse("当前没有可查询交易对。", reply_markup=self._main_menu_markup())
+        return TelegramResponse("请选择交易对：", reply_markup={"inline_keyboard": buttons})
+
+    def _help_text(self) -> str:
+        return (
+            "可用菜单：\n"
+            "1. 查看帮助\n"
+            "2. 跨市场交易查询\n"
+            "\n"
+            "命令兼容：\n"
+            "/help - 查看帮助\n"
+            "/query - 打开交易对菜单\n"
+            "/quote AU_XAU\n"
+            "/quote CU_COPPER\n"
+            "/quote CU_COPPER除税"
+        )
 
     def _pair_snapshot_text(self, alias: str) -> str:
         group_name = self.alias_map.get(self._normalize_alias(alias))
         if not group_name:
-            return f"未识别交易对: {alias}\n先发送 /pairs 查看可用交易对。"
+            return f"未识别交易对: {alias}\n请点击“跨市场交易查询”选择交易对。"
 
         item = self.query.get_snapshot_row(group_name)
         if item is None:

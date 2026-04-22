@@ -3,7 +3,11 @@ import unittest
 from types import SimpleNamespace
 from unittest import mock
 
-from cross_market_monitor.application.monitor.telegram_command_service import TelegramCommandService
+from cross_market_monitor.application.monitor.telegram_command_service import (
+    MENU_HELP,
+    MENU_QUERY,
+    TelegramCommandService,
+)
 from cross_market_monitor.domain.models import NotifierConfig
 
 
@@ -49,81 +53,139 @@ def build_context(*, notifiers: list[NotifierConfig], enabled_group_names: list[
     )
 
 
+def build_rows() -> dict[str, dict]:
+    return {
+        "AU_XAU": {
+            "group_name": "AU_XAU",
+            "status": "ok",
+            "spread_pct": 0.01,
+            "spread": 1.0,
+            "zscore": 2.0,
+            "domestic_last_raw": 100.0,
+            "normalized_last": 101.0,
+            "overseas_last": 100.0,
+            "fx_rate": 7.2,
+            "domestic_age_sec": 1.0,
+            "overseas_age_sec": 1.0,
+            "fx_age_sec": 60.0,
+            "ts_local": "2026-04-07T21:05:06+08:00",
+            "commodity_spec": {"normalized_unit_label": "USD/oz"},
+            "target_unit": "USD_PER_OUNCE",
+        },
+        "CU_COPPER_GROSS": {
+            "group_name": "CU_COPPER_GROSS",
+            "status": "ok",
+            "spread_pct": 0.0123,
+            "spread": 1.2345,
+            "zscore": 1.5,
+            "domestic_last_raw": 81234.0,
+            "normalized_last": 11.2233,
+            "overseas_last": 10.9988,
+            "fx_rate": 7.1234,
+            "domestic_age_sec": 5.0,
+            "overseas_age_sec": 3.0,
+            "fx_age_sec": 12.0,
+            "ts_local": "2026-04-07T21:05:06+08:00",
+            "commodity_spec": {"normalized_unit_label": "USD/lb"},
+            "target_unit": "USD_PER_POUND",
+        },
+        "CU_COPPER_NET": {
+            "group_name": "CU_COPPER_NET",
+            "status": "ok",
+            "spread_pct": -0.01,
+            "spread": -0.5,
+            "zscore": -1.2,
+            "domestic_last_raw": 81234.0,
+            "normalized_last": 10.2233,
+            "overseas_last": 10.9988,
+            "fx_rate": 7.1234,
+            "domestic_age_sec": 5.0,
+            "overseas_age_sec": 3.0,
+            "fx_age_sec": 12.0,
+            "ts_local": "2026-04-07T21:05:06+08:00",
+            "commodity_spec": {"normalized_unit_label": "USD/lb"},
+            "target_unit": "USD_PER_POUND",
+        },
+    }
+
+
 class TelegramCommandServiceTests(unittest.TestCase):
+    def test_help_menu_returns_persistent_two_button_keyboard(self) -> None:
+        context = build_context(
+            notifiers=[],
+            enabled_group_names=["AU_XAU"],
+        )
+        service = TelegramCommandService(context, FakeQuery(build_rows()))
+
+        response = service._handle_text("/help")
+
+        self.assertIn("跨市场交易查询", response.text)
+        self.assertEqual(
+            response.reply_markup["keyboard"],
+            [[{"text": MENU_HELP}, {"text": MENU_QUERY}]],
+        )
+
+    def test_query_menu_returns_inline_buttons_for_enabled_pairs(self) -> None:
+        context = build_context(
+            notifiers=[],
+            enabled_group_names=["AU_XAU", "CU_COPPER_GROSS", "CU_COPPER_NET"],
+        )
+        service = TelegramCommandService(context, FakeQuery(build_rows()))
+
+        response = service._handle_text(MENU_QUERY)
+
+        self.assertEqual(response.text, "请选择交易对：")
+        buttons = response.reply_markup["inline_keyboard"]
+        self.assertEqual(buttons[0][0]["text"], "AU_XAU")
+        self.assertEqual(buttons[0][0]["callback_data"], "pair:AU_XAU")
+        self.assertEqual(buttons[1][0]["text"], "CU_COPPER")
+        self.assertEqual(buttons[2][0]["text"], "CU_COPPER除税")
+
+    def test_pair_callback_returns_snapshot_text(self) -> None:
+        context = build_context(
+            notifiers=[],
+            enabled_group_names=["AU_XAU"],
+        )
+        service = TelegramCommandService(context, FakeQuery(build_rows()))
+
+        response = service._handle_callback_data("pair:AU_XAU")
+
+        self.assertIn("AU_XAU", response.text)
+        self.assertIn("价差百分比: 1.00%", response.text)
+        self.assertEqual(
+            response.reply_markup["keyboard"],
+            [[{"text": MENU_HELP}, {"text": MENU_QUERY}]],
+        )
+
     def test_quote_command_supports_base_and_net_aliases(self) -> None:
         context = build_context(
             notifiers=[],
             enabled_group_names=["CU_COPPER_GROSS", "CU_COPPER_NET"],
         )
-        query = FakeQuery(
-            {
-                "CU_COPPER_GROSS": {
-                    "group_name": "CU_COPPER_GROSS",
-                    "status": "ok",
-                    "spread_pct": 0.0123,
-                    "spread": 1.2345,
-                    "zscore": 1.5,
-                    "domestic_last_raw": 81234.0,
-                    "normalized_last": 11.2233,
-                    "overseas_last": 10.9988,
-                    "fx_rate": 7.1234,
-                    "domestic_age_sec": 5.0,
-                    "overseas_age_sec": 3.0,
-                    "fx_age_sec": 12.0,
-                    "ts_local": "2026-04-07T21:05:06+08:00",
-                    "commodity_spec": {"normalized_unit_label": "USD/lb"},
-                    "target_unit": "USD_PER_POUND",
-                },
-                "CU_COPPER_NET": {
-                    "group_name": "CU_COPPER_NET",
-                    "status": "ok",
-                    "spread_pct": -0.01,
-                    "spread": -0.5,
-                    "zscore": -1.2,
-                    "domestic_last_raw": 81234.0,
-                    "normalized_last": 10.2233,
-                    "overseas_last": 10.9988,
-                    "fx_rate": 7.1234,
-                    "domestic_age_sec": 5.0,
-                    "overseas_age_sec": 3.0,
-                    "fx_age_sec": 12.0,
-                    "ts_local": "2026-04-07T21:05:06+08:00",
-                    "commodity_spec": {"normalized_unit_label": "USD/lb"},
-                    "target_unit": "USD_PER_POUND",
-                },
-            }
-        )
+        service = TelegramCommandService(context, FakeQuery(build_rows()))
 
-        service = TelegramCommandService(context, query)
+        gross_response = service._handle_text("/quote CU_COPPER")
+        net_response = service._handle_text("/quote CU_COPPER除税")
 
-        gross_text = service._handle_text("/quote CU_COPPER")
-        net_text = service._handle_text("/quote CU_COPPER除税")
+        self.assertIn("CU_COPPER", gross_response.text)
+        self.assertIn("价差百分比: 1.23%", gross_response.text)
+        self.assertIn("Z-Score: 1.5000", gross_response.text)
+        self.assertIn("CU_COPPER除税", net_response.text)
+        self.assertIn("价差百分比: -1.00%", net_response.text)
 
-        self.assertIn("CU_COPPER", gross_text)
-        self.assertIn("价差百分比: 1.23%", gross_text)
-        self.assertIn("Z-Score: 1.5000", gross_text)
-        self.assertIn("CU_COPPER除税", net_text)
-        self.assertIn("价差百分比: -1.00%", net_text)
-
-    def test_poll_channel_once_replies_only_to_configured_chat(self) -> None:
+    def test_poll_channel_once_handles_callback_query_for_configured_chat(self) -> None:
         FakeHttpClient.instances.clear()
         FakeHttpClient.next_response = {
             "ok": True,
             "result": [
                 {
                     "update_id": 10,
-                    "message": {
-                        "chat": {"id": 12345},
-                        "text": "/quote AU_XAU",
+                    "callback_query": {
+                        "id": "cb1",
+                        "data": "pair:AU_XAU",
+                        "message": {"chat": {"id": 12345}},
                     },
-                },
-                {
-                    "update_id": 11,
-                    "message": {
-                        "chat": {"id": 99999},
-                        "text": "/quote AU_XAU",
-                    },
-                },
+                }
             ],
         }
         notifier = NotifierConfig(
@@ -138,28 +200,7 @@ class TelegramCommandServiceTests(unittest.TestCase):
             notifiers=[notifier],
             enabled_group_names=["AU_XAU"],
         )
-        query = FakeQuery(
-            {
-                "AU_XAU": {
-                    "group_name": "AU_XAU",
-                    "status": "ok",
-                    "spread_pct": 0.01,
-                    "spread": 1.0,
-                    "zscore": 2.0,
-                    "domestic_last_raw": 100.0,
-                    "normalized_last": 101.0,
-                    "overseas_last": 100.0,
-                    "fx_rate": 7.2,
-                    "domestic_age_sec": 1.0,
-                    "overseas_age_sec": 1.0,
-                    "fx_age_sec": 60.0,
-                    "ts_local": "2026-04-07T21:05:06+08:00",
-                    "commodity_spec": {"normalized_unit_label": "USD/oz"},
-                    "target_unit": "USD_PER_OUNCE",
-                }
-            }
-        )
-        service = TelegramCommandService(context, query)
+        service = TelegramCommandService(context, FakeQuery(build_rows()))
 
         with mock.patch(
             "cross_market_monitor.application.monitor.telegram_command_service.HttpClient",
@@ -167,20 +208,18 @@ class TelegramCommandServiceTests(unittest.TestCase):
         ):
             service._poll_channel_once(service.channels[0])
 
-        self.assertEqual(len(FakeHttpClient.instances), 1)
         http = FakeHttpClient.instances[0]
-        self.assertEqual(service.channels[0].update_offset, 12)
-        self.assertEqual(len(http.post_requests), 2)
-        menu_url, menu_payload = http.post_requests[0]
-        self.assertIn("/bottoken/setMyCommands", menu_url)
+        self.assertEqual(service.channels[0].update_offset, 11)
+        self.assertEqual(len(http.post_requests), 3)
+        self.assertIn("/bottoken/setMyCommands", http.post_requests[0][0])
         self.assertEqual(
-            [item["command"] for item in menu_payload["commands"]],
-            ["help", "pairs", "quote", "status"],
+            [item["command"] for item in http.post_requests[0][1]["commands"]],
+            ["help", "query"],
         )
-        url, payload = http.post_requests[1]
-        self.assertIn("/bottoken/sendMessage", url)
-        self.assertEqual(payload["chat_id"], "12345")
-        self.assertIn("AU_XAU", payload["text"])
+        self.assertIn("/bottoken/answerCallbackQuery", http.post_requests[1][0])
+        self.assertEqual(http.post_requests[1][1]["callback_query_id"], "cb1")
+        self.assertIn("/bottoken/sendMessage", http.post_requests[2][0])
+        self.assertIn("AU_XAU", http.post_requests[2][1]["text"])
 
     def test_registers_menu_only_once_per_channel(self) -> None:
         FakeHttpClient.instances.clear()

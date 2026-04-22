@@ -74,14 +74,14 @@ class NotifierFilterTests(unittest.TestCase):
             group_name="CU_COPPER_GROSS",
             category="data_quality",
             severity="warning",
-            message="CU_COPPER data status is stale",
+            message="CU_COPPER 数据状态异常：已过期",
             metadata={},
         )
 
         self.assertEqual(
             human_notification_text(alert),
-            "[WARNING] CU_COPPER data_quality\n"
-            "CU_COPPER data status is stale\n"
+            "[警告] CU_COPPER 数据质量\n"
+            "CU_COPPER 数据状态异常：已过期\n"
             "2026-04-03T11:10:57.731783+08:00",
         )
 
@@ -91,7 +91,7 @@ class NotifierFilterTests(unittest.TestCase):
             group_name="BC_COPPER",
             category="data_quality",
             severity="warning",
-            message="BC_COPPER data status is stale",
+            message="BC_COPPER 数据状态异常：已过期",
             metadata={},
         )
 
@@ -99,6 +99,7 @@ class NotifierFilterTests(unittest.TestCase):
         self.assertEqual(payload["timestamp"], "2026-04-03T11:10:57.731783+08:00")
         self.assertEqual(payload["timestamp_local"], "2026-04-03T11:10:57.731783+08:00")
         self.assertEqual(payload["timestamp_utc"], "2026-04-03T03:10:57.731783+00:00")
+        self.assertEqual(payload["title"], "BC_COPPER 数据质量 警告")
 
 
 if __name__ == "__main__":

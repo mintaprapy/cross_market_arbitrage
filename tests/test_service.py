@@ -3130,6 +3130,8 @@ class MonitorServiceTests(unittest.TestCase):
                     overseas_last=440.0,
                     spread=4.0,
                     spread_pct=0.009,
+                    domestic_age_sec=5.0,
+                    fx_age_sec=10.0,
                     route_detail={},
                     errors=[],
                 ),
@@ -3219,6 +3221,8 @@ class MonitorServiceTests(unittest.TestCase):
                     overseas_last=440.0,
                     spread=4.0,
                     spread_pct=0.009,
+                    domestic_age_sec=5.0,
+                    fx_age_sec=10.0,
                     route_detail={},
                     errors=[],
                 ),
@@ -3241,13 +3245,110 @@ class MonitorServiceTests(unittest.TestCase):
 
             service = MonitorService(config, repository)
 
-            with mock.patch("cross_market_monitor.application.query.query_service.utc_now", return_value=live_overseas_ts):
-                payload = service.get_snapshot_summary()
+            with mock.patch("cross_market_monitor.application.common.utc_now", return_value=live_overseas_ts):
+                with mock.patch("cross_market_monitor.application.query.query_service.utc_now", return_value=live_overseas_ts):
+                    payload = service.get_snapshot_summary()
+                    card_payload = service.get_card_view("AU_XAU_TEST")
 
             snapshot = payload["snapshots"][0]
+            card_item = card_payload["card_group"]["selected_item"]
             self.assertEqual(snapshot["overseas_last"], 460.0)
             self.assertEqual(snapshot["spread"], 4.0)
+            self.assertEqual(snapshot["domestic_age_sec"], 7205.0)
+            self.assertEqual(snapshot["fx_age_sec"], 7210.0)
+            self.assertEqual(snapshot["overseas_age_sec"], 0.0)
+            self.assertEqual(card_item["overseas_last"], 460.0)
+            self.assertEqual(card_item["domestic_age_sec"], 7205.0)
+            self.assertEqual(card_item["fx_age_sec"], 7210.0)
             self.assertTrue(snapshot["route_detail"]["off_session_overseas_only"])
+
+    def test_snapshot_summary_does_not_double_count_off_session_memory_ages(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repository = SQLiteRepository(f"{tmp_dir}/monitor.db")
+            config = MonitorConfig.model_validate(
+                {
+                    "app": {
+                        "name": "test",
+                        "timezone": "Asia/Shanghai",
+                        "fx_source": "fx",
+                        "sqlite_path": f"{tmp_dir}/monitor.db",
+                    },
+                    "sources": {
+                        "domestic": {"kind": "mock_quote", "base_url": "http://local"},
+                        "overseas": {"kind": "mock_quote", "base_url": "http://local"},
+                        "fx": {"kind": "mock_fx", "base_url": "http://local"},
+                    },
+                    "pairs": [
+                        {
+                            "group_name": "AU_XAU_TEST",
+                            "domestic_source": "domestic",
+                            "domestic_symbol": "nf_AU0",
+                            "domestic_label": "AU Main",
+                            "overseas_source": "overseas",
+                            "overseas_symbol": "XAU",
+                            "overseas_label": "XAU",
+                            "formula": "gold",
+                            "domestic_unit": "CNY_PER_GRAM",
+                            "target_unit": "USD_PER_OUNCE",
+                            "trading_sessions_local": ["09:00-10:00"],
+                        }
+                    ],
+                }
+            )
+            snapshot_ts = datetime(2026, 3, 20, 2, 0, tzinfo=UTC)
+            live_overseas_ts = datetime(2026, 3, 20, 4, 0, tzinfo=UTC)
+            repository.insert_raw_quote(
+                "AU_XAU_TEST",
+                "overseas",
+                MarketQuote(
+                    source_name="overseas",
+                    symbol="XAU",
+                    label="XAU",
+                    ts=live_overseas_ts,
+                    last=460.0,
+                    bid=459.0,
+                    ask=461.0,
+                    raw_payload="live-overseas",
+                ),
+            )
+
+            service = MonitorService(config, repository)
+            service.context.latest_snapshots["AU_XAU_TEST"] = SpreadSnapshot(
+                ts=snapshot_ts,
+                group_name="AU_XAU_TEST",
+                domestic_symbol="nf_AU0",
+                overseas_symbol="XAU",
+                fx_source="fx",
+                fx_rate=7.0,
+                formula="gold",
+                formula_version="v1",
+                tax_mode="gross",
+                target_unit="USD_PER_OUNCE",
+                status="ok",
+                domestic_source="domestic",
+                overseas_source="overseas",
+                domestic_label="AU Main",
+                overseas_label="XAU",
+                domestic_last_raw=100.0,
+                normalized_last=444.0,
+                overseas_last=440.0,
+                spread=4.0,
+                spread_pct=0.009,
+                domestic_age_sec=7205.0,
+                fx_age_sec=7210.0,
+                route_detail={"off_session_overseas_only": True},
+                errors=[],
+            )
+            service.context.is_polling = True
+
+            with mock.patch("cross_market_monitor.application.common.utc_now", return_value=live_overseas_ts):
+                with mock.patch("cross_market_monitor.application.query.query_service.utc_now", return_value=live_overseas_ts):
+                    payload = service.get_snapshot_summary()
+
+            snapshot = payload["snapshots"][0]
+            self.assertEqual(snapshot["domestic_age_sec"], 7205.0)
+            self.assertEqual(snapshot["fx_age_sec"], 7210.0)
+            self.assertEqual(snapshot["overseas_last"], 460.0)
 
     def test_freezes_fx_to_domestic_timestamp_when_domestic_quote_is_stale(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

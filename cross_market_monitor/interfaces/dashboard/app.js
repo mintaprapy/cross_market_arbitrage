@@ -51,6 +51,15 @@
       return numeric === null ? "--" : numeric.toFixed(digits);
     }
 
+    function formatAge(value) {
+      const numeric = toFiniteNumber(value);
+      if (numeric === null) return "--";
+      if (numeric < 60) return `${numeric.toFixed(1)}秒`;
+      if (numeric < 3600) return `${(numeric / 60).toFixed(1)}分`;
+      if (numeric < 86400) return `${(numeric / 3600).toFixed(1)}小时`;
+      return `${(numeric / 86400).toFixed(1)}天`;
+    }
+
     function formatSignedNumber(value, digits = 2) {
       const numeric = toFiniteNumber(value);
       if (numeric === null) return "--";
@@ -1625,7 +1634,7 @@
             <div>海外最新价：<strong data-card-field="overseas_last">${formatNumber(item.overseas_last, 4)}</strong> ${escapeHtml(item.target_unit)}</div>
             <div>数据源：<strong data-card-field="domestic_source">${escapeHtml(sourceDisplayName(item.domestic_source))}</strong> / <strong data-card-field="overseas_source">${escapeHtml(sourceDisplayName(item.overseas_source))}</strong></div>
             <div>汇率：<strong data-card-field="fx_rate">${formatNumber(item.fx_display_rate, 4)}</strong> / <strong data-card-field="fx_source">${escapeHtml(sourceDisplayName(item.fx_display_source))}</strong> / <strong data-card-field="fx_mode">${escapeHtml(item.fx_display_mode)}</strong></div>
-            <div data-card-field="ages">时效：国内 <strong>${formatNumber(item.domestic_age_sec, 1)}s</strong> / 海外 <strong>${formatNumber(item.overseas_age_sec, 1)}s</strong> / 汇率 <strong>${formatNumber(item.fx_age_sec, 1)}s</strong></div>
+            <div data-card-field="ages">时效：国内 <strong>${formatAge(item.domestic_age_sec)}</strong> / 海外 <strong>${formatAge(item.overseas_age_sec)}</strong> / 汇率 <strong>${formatAge(item.fx_age_sec)}</strong></div>
             ${pauseLine}
           </div>
         </div>
@@ -2151,7 +2160,7 @@
     }
 
     function agesMarkup(item) {
-      return `时效：国内 <strong>${formatNumber(item.domestic_age_sec, 1)}s</strong> / 海外 <strong>${formatNumber(item.overseas_age_sec, 1)}s</strong> / 汇率 <strong>${formatNumber(item.fx_age_sec, 1)}s</strong>`;
+      return `时效：国内 <strong>${formatAge(item.domestic_age_sec)}</strong> / 海外 <strong>${formatAge(item.overseas_age_sec)}</strong> / 汇率 <strong>${formatAge(item.fx_age_sec)}</strong>`;
     }
 
     function applySnapshotSummaryToCards(cardGroups) {

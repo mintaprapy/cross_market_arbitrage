@@ -126,6 +126,11 @@ class QueryService:
         payload["commodity_spec"] = build_commodity_spec(pair) if pair is not None else None
         return payload
 
+    def _advance_snapshot_age(self, snapshot: SpreadSnapshot, age_sec: float | None) -> float | None:
+        if age_sec is None:
+            return age_seconds(snapshot.ts)
+        return max(age_sec + age_seconds(snapshot.ts), 0.0)
+
     def _snapshot_with_live_overseas_when_closed(self, snapshot: SpreadSnapshot) -> SpreadSnapshot:
         pair = self.context.pair_map.get(snapshot.group_name)
         if pair is None or not pair.trading_sessions_local:
@@ -150,6 +155,7 @@ class QueryService:
             return snapshot
         route_detail = dict(snapshot.route_detail)
         route_detail["off_session_overseas_only"] = True
+        off_session_memory_snapshot = bool(snapshot.route_detail.get("off_session_overseas_only"))
         return snapshot.model_copy(
             update={
                 "overseas_source": latest_overseas.source_name,
@@ -158,7 +164,17 @@ class QueryService:
                 "overseas_last": latest_overseas.last,
                 "overseas_bid": latest_overseas.bid,
                 "overseas_ask": latest_overseas.ask,
+                "domestic_age_sec": (
+                    snapshot.domestic_age_sec
+                    if off_session_memory_snapshot
+                    else self._advance_snapshot_age(snapshot, snapshot.domestic_age_sec)
+                ),
                 "overseas_age_sec": age_seconds(latest_overseas.ts),
+                "fx_age_sec": (
+                    snapshot.fx_age_sec
+                    if off_session_memory_snapshot
+                    else self._advance_snapshot_age(snapshot, snapshot.fx_age_sec)
+                ),
                 "route_detail": route_detail,
             }
         )
@@ -284,7 +300,7 @@ class QueryService:
         )
         shadow_comparison = self.history.get_shadow_comparison(selected_group, limit=240)
         variants = [
-            self._snapshot_payload(snapshots[pair_group])
+            self._snapshot_payload(self._snapshot_with_live_overseas_when_closed(snapshots[pair_group]))
             for pair_group in linked_groups
             if pair_group in snapshots
         ]

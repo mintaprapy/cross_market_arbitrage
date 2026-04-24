@@ -1,5 +1,6 @@
 import asyncio
 import tempfile
+import time
 import unittest
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
@@ -186,6 +187,25 @@ class RaisingQuoteAdapter:
         raise RuntimeError(f"{symbol} unavailable")
 
 
+class SlowQuoteAdapter:
+    def __init__(self, source_name: str, delay_sec: float) -> None:
+        self.source_name = source_name
+        self.delay_sec = delay_sec
+
+    def fetch_quote(self, symbol: str, label: str) -> MarketQuote:
+        time.sleep(self.delay_sec)
+        return MarketQuote(
+            source_name=self.source_name,
+            symbol=symbol,
+            label=label,
+            ts=datetime.now(UTC),
+            last=100.0,
+            bid=99.9,
+            ask=100.1,
+            raw_payload="slow",
+        )
+
+
 class HistoryCapableDomesticAdapter:
     def fetch_quote(self, symbol: str, label: str) -> MarketQuote:
         return MarketQuote(
@@ -337,6 +357,49 @@ class FakeTqSdkAdapter(TqSdkMainAdapter):
 
 
 class MonitorServiceTests(unittest.TestCase):
+    def test_poll_once_times_out_slow_quote_candidates(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repository = SQLiteRepository(f"{tmp_dir}/monitor.db")
+            config = MonitorConfig.model_validate(
+                {
+                    "app": {
+                        "name": "test",
+                        "fx_source": "fx",
+                        "sqlite_path": f"{tmp_dir}/monitor.db",
+                        "quote_fetch_timeout_sec": 1,
+                        "poll_timeout_sec": 5,
+                    },
+                    "sources": {
+                        "domestic": {"kind": "mock_quote", "base_url": "http://local"},
+                        "overseas": {"kind": "mock_quote", "base_url": "http://local"},
+                        "fx": {"kind": "mock_fx", "base_url": "http://local"},
+                    },
+                    "pairs": [
+                        {
+                            "group_name": "AU_XAU_TEST",
+                            "domestic_source": "domestic",
+                            "domestic_symbol": "nf_AU0",
+                            "domestic_label": "AU Main",
+                            "overseas_source": "overseas",
+                            "overseas_symbol": "XAUUSDT",
+                            "overseas_label": "Binance XAU",
+                            "formula": "gold",
+                            "domestic_unit": "CNY_PER_GRAM",
+                            "target_unit": "USD_PER_OUNCE",
+                        }
+                    ],
+                }
+            )
+            service = MonitorService(config, repository, preload_spread_windows=False)
+            service.context.adapters["overseas"] = SlowQuoteAdapter("overseas", delay_sec=2.0)
+
+            snapshots = asyncio.run(service.poll_once())
+
+            self.assertFalse(service.context.is_polling)
+            self.assertEqual(len(snapshots), 1)
+            self.assertEqual(snapshots[0].status, "partial")
+            self.assertIn("overseas:overseas:fetch timed out after 1s", snapshots[0].errors)
+
     def test_snapshot_includes_overseas_hedge_position_for_one_domestic_lot(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             repository = SQLiteRepository(f"{tmp_dir}/monitor.db")

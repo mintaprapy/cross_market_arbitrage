@@ -152,6 +152,8 @@ class AppConfig(BaseModel):
     rolling_window_size: int = 120
     zscore_window_days: int = 30
     http_timeout_sec: int = 8
+    quote_fetch_timeout_sec: int = 30
+    poll_timeout_sec: int = 120
     sqlite_path: str = "data/monitor.db"
     fx_source: str = "frankfurter"
     fx_backup_sources: list[str] = Field(default_factory=list)

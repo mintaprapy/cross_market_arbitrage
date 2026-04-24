@@ -8,6 +8,8 @@ app:
   rolling_window_size: 120
   zscore_window_days: 180
   http_timeout_sec: 8
+  quote_fetch_timeout_sec: 30
+  poll_timeout_sec: 120
   sqlite_path: data/monitor.db
   fx_source: sina_fx
   fx_backup_sources: [frankfurter]

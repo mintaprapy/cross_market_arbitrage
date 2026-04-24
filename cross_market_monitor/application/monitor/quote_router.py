@@ -138,10 +138,20 @@ class QuoteRouter:
         started = perf_counter()
         try:
             adapter = self.context.adapters[candidate.source]
-            quote = await asyncio.to_thread(adapter.fetch_quote, candidate.symbol, candidate.label)
+            timeout_sec = max(int(self.context.config.app.quote_fetch_timeout_sec), 1)
+            quote = await asyncio.wait_for(
+                asyncio.to_thread(adapter.fetch_quote, candidate.symbol, candidate.label),
+                timeout=timeout_sec,
+            )
             latency_ms = (perf_counter() - started) * 1000
             self.health.record_success(candidate.source, candidate.symbol, latency_ms)
             return RouteFetchResult(candidate=candidate, quote=quote, error=None, latency_ms=latency_ms)
+        except TimeoutError:
+            latency_ms = (perf_counter() - started) * 1000
+            timeout_sec = max(int(self.context.config.app.quote_fetch_timeout_sec), 1)
+            error = f"fetch timed out after {timeout_sec}s"
+            self.health.record_failure(candidate.source, candidate.symbol, latency_ms, error)
+            return RouteFetchResult(candidate=candidate, quote=None, error=error, latency_ms=latency_ms)
         except Exception as exc:
             latency_ms = (perf_counter() - started) * 1000
             self.health.record_failure(candidate.source, candidate.symbol, latency_ms, str(exc))

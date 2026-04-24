@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 
 from cross_market_monitor.application.context import ServiceContext
 from cross_market_monitor.application.common import FXContext, build_worker_runtime_state, utc_now
 from cross_market_monitor.application.monitor.fx_service import FXService
 from cross_market_monitor.application.monitor.snapshot_builder import SnapshotBuilder
 from cross_market_monitor.domain.models import SpreadSnapshot
+
+LOGGER = logging.getLogger("cross_market_monitor")
 
 
 class PollCycleService:
@@ -57,10 +60,18 @@ class PollCycleService:
                     fetched=False,
                 )
             tasks = [
-                self.snapshot_builder.build_snapshot(pair, fx_context)
+                asyncio.create_task(self.snapshot_builder.build_snapshot(pair, fx_context))
                 for pair in target_pairs
             ]
-            snapshots = await asyncio.gather(*tasks)
+            timeout_sec = max(int(self.context.config.app.poll_timeout_sec), 1)
+            try:
+                snapshots = await asyncio.wait_for(asyncio.gather(*tasks), timeout=timeout_sec)
+            except TimeoutError:
+                for task in tasks:
+                    task.cancel()
+                await asyncio.gather(*tasks, return_exceptions=True)
+                LOGGER.warning("Polling cycle timed out after %ss", timeout_sec)
+                return list(self.context.latest_snapshots.values())
             self.context.last_poll_finished_at = utc_now()
             self.context.total_cycles += 1
             self.context.repository.upsert_runtime_state(build_worker_runtime_state(self.context))

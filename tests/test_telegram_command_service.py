@@ -61,6 +61,8 @@ def build_rows() -> dict[str, dict]:
             "spread_pct": 0.01,
             "spread": 1.0,
             "zscore": 2.0,
+            "domestic_source": "sina_domestic",
+            "overseas_source": "binance_futures",
             "domestic_last_raw": 100.0,
             "normalized_last": 101.0,
             "overseas_last": 100.0,
@@ -78,6 +80,8 @@ def build_rows() -> dict[str, dict]:
             "spread_pct": 0.0123,
             "spread": 1.2345,
             "zscore": 1.5,
+            "domestic_source": "tqsdk_domestic",
+            "overseas_source": "binance_futures",
             "domestic_last_raw": 81234.0,
             "normalized_last": 11.2233,
             "overseas_last": 10.9988,
@@ -95,6 +99,8 @@ def build_rows() -> dict[str, dict]:
             "spread_pct": -0.01,
             "spread": -0.5,
             "zscore": -1.2,
+            "domestic_source": "tqsdk_domestic",
+            "overseas_source": "binance_futures",
             "domestic_last_raw": 81234.0,
             "normalized_last": 10.2233,
             "overseas_last": 10.9988,
@@ -151,6 +157,9 @@ class TelegramCommandServiceTests(unittest.TestCase):
 
         self.assertIn("AU_XAU", response.text)
         self.assertIn("价差百分比: 1.00%", response.text)
+        self.assertIn("国内新浪价格: 100.0000", response.text)
+        self.assertIn("海外币安价格: 100.0000 USD/oz", response.text)
+        self.assertIn("时间: 2026-04-07  21:05:06 UTC_8", response.text)
         self.assertEqual(
             response.reply_markup["keyboard"],
             [[{"text": MENU_HELP}, {"text": MENU_QUERY}]],

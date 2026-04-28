@@ -771,6 +771,97 @@ class MonitorServiceTests(unittest.TestCase):
             self.assertIsNotNone(hidden_row)
             self.assertEqual(hidden_row["group_name"], "CF_COTTON_TEST")
 
+    def test_snapshot_row_partial_uses_latest_available_quotes_for_query_values(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repository = SQLiteRepository(f"{tmp_dir}/monitor.db")
+            config = MonitorConfig.model_validate(
+                {
+                    "app": {
+                        "name": "test",
+                        "fx_source": "frankfurter",
+                        "sqlite_path": f"{tmp_dir}/monitor.db",
+                    },
+                    "sources": {
+                        "sina_domestic": {"kind": "sina_futures", "base_url": "http://local"},
+                        "binance_futures": {"kind": "binance_futures", "base_url": "http://local"},
+                        "frankfurter": {"kind": "frankfurter_fx", "base_url": "http://local"},
+                    },
+                    "pairs": [
+                        {
+                            "group_name": "SC_CL",
+                            "domestic_source": "sina_domestic",
+                            "domestic_symbol": "nf_SC0",
+                            "domestic_label": "SC Main",
+                            "overseas_source": "binance_futures",
+                            "overseas_symbol": "CLUSDT",
+                            "overseas_label": "Binance CL",
+                            "formula": "crude_oil",
+                            "domestic_unit": "CNY_PER_BARREL",
+                            "target_unit": "USD_PER_BARREL",
+                        }
+                    ],
+                }
+            )
+            now = datetime(2026, 4, 28, 6, 52, 18, tzinfo=UTC)
+            repository.insert_raw_quote(
+                "SC_CL",
+                "domestic",
+                MarketQuote(
+                    source_name="sina_domestic",
+                    symbol="nf_SC0",
+                    label="SC Main",
+                    ts=now,
+                    last=700.0,
+                    bid=699.0,
+                    ask=701.0,
+                    raw_payload="domestic",
+                ),
+            )
+            repository.insert_fx_rate(
+                FXQuote(
+                    source_name="frankfurter",
+                    pair="USD/CNY",
+                    ts=now,
+                    rate=7.0,
+                    raw_payload="fx",
+                )
+            )
+            service = MonitorService(config, repository)
+            service.context.is_polling = True
+            service.context.latest_snapshots["SC_CL"] = SpreadSnapshot(
+                ts=now,
+                group_name="SC_CL",
+                domestic_symbol="nf_SC0",
+                overseas_symbol="CLUSDT",
+                domestic_source=None,
+                overseas_source="binance_futures",
+                domestic_label="SC Main",
+                overseas_label="Binance CL",
+                fx_source="frankfurter",
+                fx_rate=None,
+                formula="crude_oil",
+                formula_version="v1",
+                tax_mode="gross",
+                target_unit="USD_PER_BARREL",
+                status="partial",
+                errors=["domestic:sina_domestic:HTTP 403"],
+                overseas_last=95.0,
+                rolling_mean=0.01,
+                rolling_std=0.02,
+            )
+
+            with mock.patch("cross_market_monitor.application.query.query_service.utc_now", return_value=now):
+                row = service.query.get_snapshot_row("SC_CL")
+
+            self.assertIsNotNone(row)
+            self.assertEqual(row["status"], "partial")
+            self.assertEqual(row["domestic_source"], "sina_domestic")
+            self.assertEqual(row["domestic_last_raw"], 700.0)
+            self.assertEqual(row["normalized_last"], 100.0)
+            self.assertEqual(row["spread"], 5.0)
+            self.assertAlmostEqual(row["spread_pct"], 10.0 / 195.0)
+            self.assertAlmostEqual(row["zscore"], ((10.0 / 195.0) - 0.01) / 0.02)
+
     def test_snapshot_default_is_lightweight_without_histories(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             repository = SQLiteRepository(f"{tmp_dir}/monitor.db")
@@ -1651,6 +1742,65 @@ class MonitorServiceTests(unittest.TestCase):
             alerts = service.alert_service.evaluate_alerts(pair, third_snapshot)
             self.assertEqual(len(alerts), 1)
             self.assertEqual(alerts[0].category, "data_quality")
+
+    def test_data_quality_alert_identifies_failed_source(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repository = SQLiteRepository(f"{tmp_dir}/monitor.db")
+            config = MonitorConfig.model_validate(
+                {
+                    "app": {
+                        "name": "test",
+                        "fx_source": "sina_fx",
+                        "sqlite_path": f"{tmp_dir}/monitor.db",
+                    },
+                    "sources": {
+                        "sina_domestic": {"kind": "sina_futures", "base_url": "http://local"},
+                        "binance_futures": {"kind": "binance_futures", "base_url": "http://local"},
+                        "sina_fx": {"kind": "sina_fx", "base_url": "http://local"},
+                    },
+                    "pairs": [
+                        {
+                            "group_name": "BC_COPPER",
+                            "domestic_source": "sina_domestic",
+                            "domestic_symbol": "nf_BC0",
+                            "domestic_label": "BC Main",
+                            "overseas_source": "binance_futures",
+                            "overseas_symbol": "COPPERUSDT",
+                            "overseas_label": "Binance Copper",
+                            "formula": "copper",
+                            "domestic_unit": "CNY_PER_TON",
+                            "target_unit": "USD_PER_POUND",
+                            "trading_sessions_local": ["09:00-15:00"],
+                            "thresholds": {"data_quality_alert_delay_sec": 0},
+                        }
+                    ],
+                }
+            )
+            service = MonitorService(config, repository)
+            pair = service.config.pairs[0]
+            snapshot = SpreadSnapshot(
+                ts=datetime(2026, 4, 28, 6, 52, 18, tzinfo=UTC),
+                group_name="BC_COPPER",
+                domestic_symbol="nf_BC0",
+                overseas_symbol="COPPERUSDT",
+                domestic_source="sina_domestic",
+                overseas_source="binance_futures",
+                fx_source="sina_fx",
+                fx_rate=7.1,
+                formula="copper",
+                formula_version="v1",
+                tax_mode="gross",
+                target_unit="USD_PER_POUND",
+                status="partial",
+                errors=["route: domestic quote unavailable"],
+                overseas_last=4.5,
+            )
+
+            alerts = service.alert_service.evaluate_alerts(pair, snapshot)
+
+            self.assertEqual(len(alerts), 1)
+            self.assertIn("异常明细：国内新浪缺失", alerts[0].message)
+            self.assertEqual(alerts[0].metadata["issue_detail"], "国内新浪缺失")
 
     def test_data_quality_alerts_dedupe_tax_variants(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

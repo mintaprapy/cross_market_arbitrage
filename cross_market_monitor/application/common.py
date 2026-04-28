@@ -155,6 +155,61 @@ def data_quality_group_name(group_name: str) -> str:
     return variant_group_base(group_name)
 
 
+SOURCE_DISPLAY_NAMES = {
+    "binance_futures": "币安",
+    "cme_nymex": "CME",
+    "cme_reference": "CME",
+    "frankfurter": "Frankfurter",
+    "frankfurter_fx": "Frankfurter",
+    "gate_futures": "Gate",
+    "gate_tradfi": "Gate",
+    "hyperliquid": "Hyperliquid",
+    "hyperliquid_xyz": "Hyperliquid",
+    "okx_swap": "OKX",
+    "open_er_api_fx": "OpenER",
+    "sina_domestic": "新浪",
+    "sina_futures": "新浪",
+    "sina_fx": "新浪",
+    "tqsdk_domestic": "TQ",
+    "tqsdk_main": "TQ",
+}
+
+
+def display_source_name(source_name: str | None) -> str:
+    if not source_name:
+        return "--"
+    normalized = source_name.strip()
+    if not normalized:
+        return "--"
+    lowered = normalized.lower()
+    if lowered in SOURCE_DISPLAY_NAMES:
+        return SOURCE_DISPLAY_NAMES[lowered]
+    if "binance" in lowered:
+        return "币安"
+    if "sina" in lowered:
+        return "新浪"
+    if "tqsdk" in lowered or lowered.startswith("tq"):
+        return "TQ"
+    if "okx" in lowered:
+        return "OKX"
+    if "gate" in lowered:
+        return "Gate"
+    if "hyperliquid" in lowered:
+        return "Hyperliquid"
+    return normalized
+
+
+def format_local_display_timestamp(ts: datetime, timezone) -> str:
+    local_ts = ts.astimezone(timezone)
+    offset = local_ts.utcoffset() or timedelta(0)
+    total_minutes = int(offset.total_seconds() // 60)
+    sign = "-" if total_minutes < 0 else ""
+    absolute_minutes = abs(total_minutes)
+    hours, minutes = divmod(absolute_minutes, 60)
+    offset_text = f"{sign}{hours}" if minutes == 0 else f"{sign}{hours}:{minutes:02d}"
+    return f"{local_ts:%Y-%m-%d  %H:%M:%S} UTC_{offset_text}"
+
+
 def infer_product_code(symbol: str) -> str | None:
     mapping = {
         "nf_AU0": "au",

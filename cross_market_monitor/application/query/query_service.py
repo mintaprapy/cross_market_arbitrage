@@ -5,7 +5,8 @@ from cross_market_monitor.application.context import ServiceContext
 from cross_market_monitor.application.control.route_preference_service import RoutePreferenceService
 from cross_market_monitor.application.history.history_service import HistoryService
 from cross_market_monitor.domain.commodity_specs import build_commodity_spec
-from cross_market_monitor.domain.models import RuntimeHealth, SourceHealth, SpreadSnapshot, WorkerRuntimeState
+from cross_market_monitor.domain.formulas import compute_spread, normalize_domestic_quote
+from cross_market_monitor.domain.models import FXQuote, MarketQuote, PairConfig, RuntimeHealth, SourceHealth, SpreadSnapshot, WorkerRuntimeState
 from cross_market_monitor.domain.source_capabilities import capability_for_source
 
 
@@ -179,6 +180,179 @@ class QueryService:
             }
         )
 
+    def _snapshot_with_latest_values_when_partial(self, snapshot: SpreadSnapshot) -> SpreadSnapshot:
+        if snapshot.status != "partial":
+            return snapshot
+        pair = self.context.pair_map.get(snapshot.group_name)
+        if pair is None:
+            return snapshot
+
+        now_utc = utc_now()
+        updates: dict = {}
+        domestic_last = snapshot.domestic_last_raw
+        domestic_bid = snapshot.domestic_bid_raw
+        domestic_ask = snapshot.domestic_ask_raw
+        overseas_last = snapshot.overseas_last
+        overseas_bid = snapshot.overseas_bid
+        overseas_ask = snapshot.overseas_ask
+        fx_rate = snapshot.fx_rate
+
+        if domestic_last is None:
+            latest_domestic = self._latest_leg_quote(
+                pair,
+                snapshot,
+                "domestic",
+                now_utc,
+            )
+            if latest_domestic is not None:
+                domestic_last = latest_domestic.last
+                domestic_bid = latest_domestic.bid
+                domestic_ask = latest_domestic.ask
+                updates.update(
+                    {
+                        "domestic_source": latest_domestic.source_name,
+                        "domestic_symbol": latest_domestic.symbol,
+                        "domestic_label": latest_domestic.label,
+                        "domestic_last_raw": latest_domestic.last,
+                        "domestic_bid_raw": latest_domestic.bid,
+                        "domestic_ask_raw": latest_domestic.ask,
+                        "domestic_age_sec": age_seconds(latest_domestic.ts),
+                    }
+                )
+
+        if overseas_last is None:
+            latest_overseas = self._latest_leg_quote(
+                pair,
+                snapshot,
+                "overseas",
+                now_utc,
+            )
+            if latest_overseas is not None:
+                overseas_last = latest_overseas.last
+                overseas_bid = latest_overseas.bid
+                overseas_ask = latest_overseas.ask
+                updates.update(
+                    {
+                        "overseas_source": latest_overseas.source_name,
+                        "overseas_symbol": latest_overseas.symbol,
+                        "overseas_label": latest_overseas.label,
+                        "overseas_last": latest_overseas.last,
+                        "overseas_bid": latest_overseas.bid,
+                        "overseas_ask": latest_overseas.ask,
+                        "overseas_age_sec": age_seconds(latest_overseas.ts),
+                    }
+                )
+
+        if fx_rate is None:
+            latest_fx = self._latest_fx_quote(snapshot)
+            if latest_fx is not None:
+                fx_rate = latest_fx.rate
+                updates.update(
+                    {
+                        "fx_source": latest_fx.source_name,
+                        "fx_rate": latest_fx.rate,
+                        "fx_age_sec": age_seconds(latest_fx.ts),
+                    }
+                )
+
+        normalized_last = snapshot.normalized_last
+        if domestic_last is not None and fx_rate is not None:
+            normalized_quote = normalize_domestic_quote(
+                pair,
+                fx_rate,
+                domestic_last,
+                domestic_bid,
+                domestic_ask,
+            )
+            normalized_last = normalized_quote.last
+            updates.update(
+                {
+                    "normalized_last": normalized_quote.last,
+                    "normalized_bid": normalized_quote.bid,
+                    "normalized_ask": normalized_quote.ask,
+                }
+            )
+
+        spread, spread_pct = compute_spread(normalized_last, overseas_last)
+        if spread is not None and spread_pct is not None:
+            updates.update({"spread": spread, "spread_pct": spread_pct})
+            if snapshot.rolling_mean is not None and snapshot.rolling_std not in (None, 0):
+                updates["zscore"] = (spread_pct - snapshot.rolling_mean) / snapshot.rolling_std
+
+        if not updates:
+            return snapshot
+
+        route_detail = dict(snapshot.route_detail)
+        route_detail["query_latest_values_fallback"] = True
+        updates["route_detail"] = route_detail
+        return snapshot.model_copy(update=updates)
+
+    def _latest_leg_quote(
+        self,
+        pair: PairConfig,
+        snapshot: SpreadSnapshot,
+        leg_type: str,
+        target_ts,
+    ) -> MarketQuote | None:
+        for symbol in self._candidate_leg_symbols(pair, snapshot, leg_type):
+            quote = self.context.repository.load_latest_raw_quote_before(
+                snapshot.group_name,
+                leg_type,
+                symbol,
+                target_ts,
+            )
+            if quote is not None:
+                return quote
+        return None
+
+    def _candidate_leg_symbols(
+        self,
+        pair: PairConfig,
+        snapshot: SpreadSnapshot,
+        leg_type: str,
+    ) -> list[str]:
+        values: list[str | None] = []
+        if leg_type == "domestic":
+            values.extend(
+                [
+                    snapshot.domestic_symbol,
+                    getattr(self.context, "preferred_domestic_symbols", {}).get(pair.group_name),
+                    pair.domestic_symbol,
+                ]
+            )
+            values.extend(candidate.symbol for candidate in pair.domestic_candidates if candidate.enabled)
+            values.extend(candidate.symbol for candidate in pair.domestic_candidates if not candidate.enabled)
+        else:
+            values.extend(
+                [
+                    snapshot.overseas_symbol,
+                    getattr(self.context, "preferred_overseas_symbols", {}).get(pair.group_name),
+                    pair.overseas_symbol,
+                ]
+            )
+            values.extend(candidate.symbol for candidate in pair.overseas_candidates if candidate.enabled)
+            values.extend(candidate.symbol for candidate in pair.overseas_candidates if not candidate.enabled)
+
+        symbols: list[str] = []
+        seen: set[str] = set()
+        for value in values:
+            if not value or value in seen:
+                continue
+            symbols.append(value)
+            seen.add(value)
+        return symbols
+
+    def _latest_fx_quote(self, snapshot: SpreadSnapshot) -> FXQuote | None:
+        if self.context.latest_fx_quote is not None:
+            return self.context.latest_fx_quote
+        source_names = [
+            snapshot.fx_source,
+            self.context.config.app.fx_source,
+            *self.context.config.app.fx_backup_sources,
+        ]
+        deduped = [source for index, source in enumerate(source_names) if source and source not in source_names[:index]]
+        return self.context.repository.load_latest_fx_rate_any(deduped)
+
     def get_health(self) -> dict:
         snapshots = self._current_snapshots(self.context.dashboard_pairs)
         runtime_state = self._current_runtime_state(snapshots)
@@ -244,7 +418,9 @@ class QueryService:
         snapshot = snapshots.get(group_name)
         if snapshot is None:
             return None
-        return self._snapshot_payload(self._snapshot_with_live_overseas_when_closed(snapshot))
+        snapshot = self._snapshot_with_live_overseas_when_closed(snapshot)
+        snapshot = self._snapshot_with_latest_values_when_partial(snapshot)
+        return self._snapshot_payload(snapshot)
 
     def get_snapshot(self, *, include_cards: bool = False) -> dict:
         summary = self.get_snapshot_summary()

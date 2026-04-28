@@ -262,6 +262,7 @@
     const KILOGRAMS_PER_METRIC_TON = 1000.0;
     const VAT_RATE = 1.13;
     let DASHBOARD_BOOTSTRAPPED = false;
+    let DASHBOARD_REFRESH_IN_FLIGHT = false;
     let ACTIVE_CARD_GROUP_NAME = null;
     let ACTIVE_CARD_REFRESH_IN_FLIGHT = false;
     let LAST_CARD_GROUPS = [];
@@ -584,8 +585,8 @@
       document.body.classList.remove("modal-open");
     }
 
-    function buildReplayRowId(cardKey) {
-      return `replay-row-${sanitizeDomId(cardKey)}`;
+    function buildReplayRowId(groupName) {
+      return `replay-row-${sanitizeDomId(groupName)}`;
     }
 
     function buildInstrumentRowId(cardKey) {
@@ -1784,11 +1785,28 @@
       `;
     }
 
-    function buildReplayRowMarkup(cardGroup, report) {
-      const item = cardGroup.selected_item;
+    function replayEntriesForCardGroup(cardGroup) {
+      if (!cardGroup || !cardGroup.selected_item) {
+        return [];
+      }
+      return (cardGroup.variants || [cardGroup.selected_item]).map((item) => ({
+        card_key: cardGroup.card_key,
+        display_name: cardGroup.variants?.length > 1
+          ? `${cardGroup.display_name || displayNameForGroup(cardGroup.card_key || item.group_name)} ${taxModeForGroup(item.group_name)}`
+          : cardGroup.display_name || displayNameForGroup(item.group_name),
+        selected_item: item,
+      }));
+    }
+
+    function replayEntriesForCardGroups(cardGroups) {
+      return (cardGroups || []).flatMap((cardGroup) => replayEntriesForCardGroup(cardGroup));
+    }
+
+    function buildReplayRowMarkup(replayEntry, report) {
+      const item = replayEntry.selected_item;
       return `
-        <tr id="${buildReplayRowId(cardGroup.card_key)}">
-          <td>${escapeHtml(cardGroup.display_name || displayNameForGroup(cardGroup.card_key || item.group_name))}</td>
+        <tr id="${buildReplayRowId(item.group_name)}">
+          <td>${escapeHtml(replayEntry.display_name || displayNameForGroup(item.group_name))}</td>
           <td>${report.sample_count}</td>
           <td>${formatPct(report.spread_pct_mean)}</td>
           <td>${formatPct(report.spread_pct_std)}</td>
@@ -1800,67 +1818,78 @@
       `;
     }
 
-    function buildReplayLoadingRow(cardGroup) {
+    function buildReplayLoadingRow(replayEntry) {
+      const item = replayEntry.selected_item;
       return `
-        <tr id="${buildReplayRowId(cardGroup.card_key)}">
-          <td>${escapeHtml(cardGroup.display_name || displayNameForGroup(cardGroup.card_key || cardGroup.selected_item.group_name))}</td>
+        <tr id="${buildReplayRowId(item.group_name)}">
+          <td>${escapeHtml(replayEntry.display_name || displayNameForGroup(item.group_name))}</td>
           <td colspan="7" class="muted">正在加载回放统计...</td>
         </tr>
       `;
     }
 
-    function buildReplayErrorRow(cardGroup, message) {
+    function buildReplayErrorRow(replayEntry, message) {
+      const item = replayEntry.selected_item;
       return `
-        <tr id="${buildReplayRowId(cardGroup.card_key)}">
-          <td>${escapeHtml(cardGroup.display_name || displayNameForGroup(cardGroup.card_key || cardGroup.selected_item.group_name))}</td>
+        <tr id="${buildReplayRowId(item.group_name)}">
+          <td>${escapeHtml(replayEntry.display_name || displayNameForGroup(item.group_name))}</td>
           <td colspan="7" class="muted">${escapeHtml(message)}</td>
         </tr>
       `;
     }
 
-    async function buildReplayRow(cardGroup) {
-      if (!cardGroup || !cardGroup.selected_item) {
+    async function buildReplayRow(replayEntry) {
+      if (!replayEntry || !replayEntry.selected_item) {
         return "";
       }
-      const report = await fetchJson(`/api/replay/summary?group_name=${encodeURIComponent(cardGroup.selected_item.group_name)}&limit=500`);
-      return buildReplayRowMarkup(cardGroup, report);
+      const report = await fetchJson(`/api/replay/summary?group_name=${encodeURIComponent(replayEntry.selected_item.group_name)}&limit=500`);
+      return buildReplayRowMarkup(replayEntry, report);
     }
 
     async function refreshReplayRow(cardGroup) {
-      if (!cardGroup || !cardGroup.selected_item) {
+      const replayEntries = replayEntriesForCardGroup(cardGroup);
+      if (!replayEntries.length) {
         return;
       }
-      const replayMarkup = await buildReplayRow(cardGroup);
-      const existingReplayRow = document.getElementById(buildReplayRowId(cardGroup.card_key));
-      if (existingReplayRow) {
-        existingReplayRow.outerHTML = replayMarkup;
-      } else {
-        document.getElementById("replay").innerHTML = replayMarkup;
+      const replayRows = await Promise.all(replayEntries.map((entry) => buildReplayRow(entry)));
+      for (const [index, replayEntry] of replayEntries.entries()) {
+        const existingReplayRow = document.getElementById(buildReplayRowId(replayEntry.selected_item.group_name));
+        if (existingReplayRow) {
+          existingReplayRow.outerHTML = replayRows[index];
+        } else {
+          document.getElementById("replay").insertAdjacentHTML("beforeend", replayRows[index]);
+        }
       }
     }
 
     function renderReplayRowsLoading(cardGroups) {
-      const groups = (cardGroups || []).filter((cardGroup) => cardGroup?.selected_item);
-      if (!groups.length) {
+      const replayEntries = replayEntriesForCardGroups(cardGroups);
+      if (!replayEntries.length) {
         renderReplayPlaceholder();
         return;
       }
-      document.getElementById("replay").innerHTML = groups.map((cardGroup) => buildReplayLoadingRow(cardGroup)).join("");
+      document.getElementById("replay").innerHTML = replayEntries.map((entry) => buildReplayLoadingRow(entry)).join("");
     }
 
     async function refreshReplayRows(cardGroups) {
-      const groups = (cardGroups || []).filter((cardGroup) => cardGroup?.selected_item);
-      if (!groups.length) {
+      const replayEntries = replayEntriesForCardGroups(cardGroups);
+      if (!replayEntries.length) {
         renderReplayPlaceholder();
         return;
       }
       await Promise.allSettled(
-        groups.map(async (cardGroup) => {
+        replayEntries.map(async (replayEntry) => {
           try {
-            await refreshReplayRow(cardGroup);
+            const replayMarkup = await buildReplayRow(replayEntry);
+            const existingReplayRow = document.getElementById(buildReplayRowId(replayEntry.selected_item.group_name));
+            if (existingReplayRow) {
+              existingReplayRow.outerHTML = replayMarkup;
+            } else {
+              document.getElementById("replay").insertAdjacentHTML("beforeend", replayMarkup);
+            }
           } catch (error) {
-            const existingReplayRow = document.getElementById(buildReplayRowId(cardGroup.card_key));
-            const message = buildReplayErrorRow(cardGroup, `回放研究加载失败：${error.message}`);
+            const existingReplayRow = document.getElementById(buildReplayRowId(replayEntry.selected_item.group_name));
+            const message = buildReplayErrorRow(replayEntry, `回放研究加载失败：${error.message}`);
             if (existingReplayRow) {
               existingReplayRow.outerHTML = message;
             } else {
@@ -1949,6 +1978,8 @@
     function buildMetaMarkup(snapshot) {
       const liveFxRate = toFiniteNumber(snapshot?.health?.latest_fx_rate);
       const appliedFxRate = displayFxRate(snapshot?.health);
+      const refreshText = DASHBOARD_REFRESH_IN_FLIGHT ? "刷新中" : "刷新";
+      const refreshDisabled = DASHBOARD_REFRESH_IN_FLIGHT ? " disabled" : "";
       const fallbackPill = snapshot?._snapshot_source === "summary-cache"
         ? `<span class="pill pill-warn">静态摘要兜底：${escapeHtml(formatDateTime(snapshot?._generated_at || snapshot?.as_of))}</span>`
         : "";
@@ -1970,6 +2001,7 @@
             <button type="button" class="fx-override-button" data-action="custom-fx-reset"${customFxActive() ? "" : " disabled"}>恢复</button>
           </form>
         </div>
+        <button type="button" class="dashboard-refresh-button" data-action="dashboard-refresh"${refreshDisabled}>${refreshText}</button>
       `;
     }
 
@@ -2131,10 +2163,33 @@
       `).join("");
     }
 
-    load().catch((error) => {
+    function setDashboardRefreshBusy(busy) {
+      const button = document.querySelector('[data-action="dashboard-refresh"]');
+      if (!button) {
+        return;
+      }
+      button.disabled = busy;
+      button.textContent = busy ? "刷新中" : "刷新";
+    }
+
+    async function refreshDashboard() {
+      if (DASHBOARD_REFRESH_IN_FLIGHT) {
+        return;
+      }
+      DASHBOARD_REFRESH_IN_FLIGHT = true;
+      setDashboardRefreshBusy(true);
+      try {
+        await load();
+      } finally {
+        DASHBOARD_REFRESH_IN_FLIGHT = false;
+        setDashboardRefreshBusy(false);
+      }
+    }
+
+    refreshDashboard().catch((error) => {
       document.getElementById("cards").innerHTML = `<article class="card">页面加载失败：${escapeHtml(error.message)}</article>`;
     });
-    setInterval(() => load().catch(() => {}), 10000);
+    setInterval(() => refreshDashboard().catch(() => {}), 10000);
 
     function cardSummaryForGroup(cardGroups, groupName) {
       for (const cardGroup of cardGroups) {
@@ -2243,6 +2298,12 @@
       }
       if (action === "custom-fx-reset") {
         handleCustomFxReset();
+        return;
+      }
+      if (action === "dashboard-refresh") {
+        refreshDashboard().catch((error) => {
+          window.alert(`刷新数据失败：${error.message}`);
+        });
       }
     });
 

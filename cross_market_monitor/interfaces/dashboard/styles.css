@@ -139,6 +139,33 @@
       opacity: 0.4;
       cursor: default;
     }
+    .dashboard-refresh-button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex: 0 0 auto;
+      min-height: 48px;
+      margin-left: auto;
+      padding: 9px 16px;
+      border-radius: 16px;
+      border: 1px solid rgba(157, 201, 255, 0.22);
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--text);
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background 120ms ease, border-color 120ms ease, opacity 120ms ease;
+    }
+    .dashboard-refresh-button:hover {
+      border-color: rgba(244, 211, 94, 0.34);
+      background: rgba(244, 211, 94, 0.12);
+    }
+    .dashboard-refresh-button:disabled {
+      opacity: 0.58;
+      cursor: default;
+    }
     .grid {
       display: grid;
       grid-template-columns: minmax(0, 1fr);
@@ -828,6 +855,9 @@
     @media (max-width: 700px) {
       .shell { padding: 16px; }
       .meta { flex-wrap: wrap; }
+      .dashboard-refresh-button {
+        margin-left: 0;
+      }
       .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .route-grid { grid-template-columns: 1fr; }
       .zscore-modal-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }

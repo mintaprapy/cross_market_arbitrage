@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from zoneinfo import ZoneInfo
 
-from cross_market_monitor.application.common import display_group_name
+from cross_market_monitor.application.common import display_group_name, format_local_display_timestamp
 from cross_market_monitor.domain.models import AlertEvent, NotifierConfig
 from cross_market_monitor.infrastructure.http_client import HttpClient
 
@@ -149,6 +149,10 @@ def _format_local_timestamp(ts: datetime, timezone: ZoneInfo) -> str:
     return ts.astimezone(timezone).isoformat()
 
 
+def _format_human_timestamp(ts: datetime, timezone: ZoneInfo) -> str:
+    return format_local_display_timestamp(ts, timezone)
+
+
 def alert_payload(alert: AlertEvent, timezone: ZoneInfo) -> dict:
     title_group_name = display_group_name(alert.group_name) if alert.category == "data_quality" else alert.group_name
     return {
@@ -172,7 +176,7 @@ def human_notification_text(alert: AlertEvent, timezone: ZoneInfo | None = None)
     return (
         f"[{severity_label(alert.severity)}] {group_name} {category_label(alert.category)}\n"
         f"{alert.message}\n"
-        f"{_format_local_timestamp(alert.ts, timezone)}"
+        f"{_format_human_timestamp(alert.ts, timezone)}"
     )
 
 

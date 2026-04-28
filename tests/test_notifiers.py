@@ -82,7 +82,7 @@ class NotifierFilterTests(unittest.TestCase):
             human_notification_text(alert),
             "[警告] CU_COPPER 数据质量\n"
             "CU_COPPER 数据状态异常：已过期\n"
-            "2026-04-03T11:10:57.731783+08:00",
+            "2026-04-03  11:10:57 UTC_8",
         )
 
     def test_alert_payload_includes_local_and_utc_timestamps(self) -> None:

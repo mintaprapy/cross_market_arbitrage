@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from cross_market_monitor.application.common import display_group_name, variant_group_base
+from cross_market_monitor.application.common import display_group_name, display_source_name, format_local_display_timestamp, variant_group_base
 from cross_market_monitor.infrastructure.http_client import HttpClient
 
 LOGGER = logging.getLogger("cross_market_monitor")
@@ -280,6 +280,8 @@ class TelegramCommandService:
         commodity = item.get("commodity_spec") or {}
         unit = commodity.get("normalized_unit_label") or item.get("target_unit", "")
         local_ts = self._format_local_ts(item.get("ts_local") or item.get("ts"))
+        domestic_label = self._leg_price_label("国内", item.get("domestic_source"))
+        overseas_label = self._leg_price_label("海外", item.get("overseas_source"))
         return "\n".join(
             [
                 f"{display_group_name(group_name)}",
@@ -287,9 +289,9 @@ class TelegramCommandService:
                 f"价差百分比: {self._fmt_pct(item.get('spread_pct'))}",
                 f"理论价差: {self._fmt_num(item.get('spread'))} {unit}".rstrip(),
                 f"Z-Score: {self._fmt_num(item.get('zscore'))}",
-                f"国内价格: {self._fmt_num(item.get('domestic_last_raw'))}",
+                f"{domestic_label}: {self._fmt_num(item.get('domestic_last_raw'))}",
                 f"国内换算价: {self._fmt_num(item.get('normalized_last'))} {unit}".rstrip(),
-                f"海外最新价: {self._fmt_num(item.get('overseas_last'))} {unit}".rstrip(),
+                f"{overseas_label}: {self._fmt_num(item.get('overseas_last'))} {unit}".rstrip(),
                 f"汇率: {self._fmt_num(item.get('fx_rate'))}",
                 f"时效: 国内 {self._fmt_age(item.get('domestic_age_sec'))} / 海外 {self._fmt_age(item.get('overseas_age_sec'))} / 汇率 {self._fmt_age(item.get('fx_age_sec'))}",
                 f"时间: {local_ts}",
@@ -303,7 +305,15 @@ class TelegramCommandService:
             parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
         except ValueError:
             return value
-        return parsed.astimezone(self.timezone).isoformat(timespec="seconds")
+        return format_local_display_timestamp(parsed, self.timezone)
+
+    @staticmethod
+    def _leg_price_label(prefix: str, source_name: str | None) -> str:
+        source = display_source_name(source_name)
+        if source == "--":
+            return f"{prefix}价格" if prefix == "国内" else f"{prefix}最新价"
+        suffix = "价格"
+        return f"{prefix}{source}{suffix}"
 
     @staticmethod
     def _fmt_num(value: float | None) -> str:

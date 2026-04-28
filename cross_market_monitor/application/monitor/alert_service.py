@@ -7,6 +7,7 @@ from datetime import datetime
 from cross_market_monitor.application.common import data_quality_group_name
 from cross_market_monitor.application.common import is_within_trading_sessions
 from cross_market_monitor.application.common import display_group_name
+from cross_market_monitor.application.common import display_source_name
 from cross_market_monitor.application.common import age_seconds
 from cross_market_monitor.application.context import ServiceContext
 from cross_market_monitor.application.history.history_service import HistoryService
@@ -26,15 +27,23 @@ class AlertService:
 
         should_emit_data_quality_alert = self.should_emit_data_quality_alert(pair, snapshot)
         if snapshot.status in {"partial", "stale", "error"} and should_emit_data_quality_alert:
+            issue_detail = self.data_quality_issue_detail(pair, snapshot)
             alerts.append(
                 self.make_alert(
                     now,
                     pair.group_name,
                     "data_quality",
                     "critical" if snapshot.status == "error" else "warning",
-                    f"{display_group_name(pair.group_name)} 数据状态异常：{self.status_text(snapshot.status)}",
+                    (
+                        f"{display_group_name(pair.group_name)} 数据状态异常：{self.status_text(snapshot.status)}\n"
+                        f"异常明细：{issue_detail}"
+                    ),
                     {
                         "errors": snapshot.errors,
+                        "issue_detail": issue_detail,
+                        "domestic_source": snapshot.domestic_source or pair.domestic_source,
+                        "overseas_source": snapshot.overseas_source or pair.overseas_source,
+                        "fx_source": snapshot.fx_source or self.context.config.app.fx_source,
                         "domestic_age_sec": snapshot.domestic_age_sec,
                         "overseas_age_sec": snapshot.overseas_age_sec,
                         "fx_age_sec": snapshot.fx_age_sec,
@@ -160,6 +169,87 @@ class AlertService:
                     )
 
         return [alert for alert in alerts if alert is not None]
+
+    def data_quality_issue_detail(self, pair: PairConfig, snapshot: SpreadSnapshot) -> str:
+        domestic_source = display_source_name(
+            self.issue_source_name(snapshot, "domestic", snapshot.domestic_source or pair.domestic_source)
+        )
+        overseas_source = display_source_name(
+            self.issue_source_name(snapshot, "overseas", snapshot.overseas_source or pair.overseas_source)
+        )
+        fx_source = display_source_name(snapshot.fx_source or self.context.config.app.fx_source)
+        details: list[str] = []
+
+        if snapshot.domestic_last_raw is None:
+            details.append(f"国内{domestic_source}缺失")
+        elif self.is_age_stale(snapshot.domestic_age_sec, pair.thresholds.stale_seconds):
+            details.append(f"国内{domestic_source}过期 {self.format_age(snapshot.domestic_age_sec)}")
+
+        if snapshot.overseas_last is None:
+            details.append(f"海外{overseas_source}缺失")
+        elif self.is_age_stale(snapshot.overseas_age_sec, pair.thresholds.stale_seconds):
+            details.append(f"海外{overseas_source}过期 {self.format_age(snapshot.overseas_age_sec)}")
+
+        if snapshot.fx_rate is None:
+            details.append(f"汇率{fx_source}缺失")
+        elif self.is_age_stale(snapshot.fx_age_sec, self.context.config.app.fx_max_age_sec):
+            details.append(f"汇率{fx_source}过期 {self.format_age(snapshot.fx_age_sec)}")
+
+        if snapshot.max_skew_sec is not None and snapshot.max_skew_sec > pair.thresholds.max_skew_seconds:
+            details.append(f"国内/海外/汇率时间差过大 {self.format_age(snapshot.max_skew_sec)}")
+
+        if not details:
+            details.extend(self.translate_quality_errors(pair, snapshot))
+
+        return "；".join(details) if details else "见数据源健康"
+
+    def translate_quality_errors(self, pair: PairConfig, snapshot: SpreadSnapshot) -> list[str]:
+        domestic_source = display_source_name(
+            self.issue_source_name(snapshot, "domestic", snapshot.domestic_source or pair.domestic_source)
+        )
+        overseas_source = display_source_name(
+            self.issue_source_name(snapshot, "overseas", snapshot.overseas_source or pair.overseas_source)
+        )
+        fx_source = display_source_name(snapshot.fx_source or self.context.config.app.fx_source)
+        translated: list[str] = []
+        for error in snapshot.errors:
+            lowered = error.lower()
+            if "domestic" in lowered:
+                translated.append(f"国内{domestic_source}异常")
+            elif "overseas" in lowered:
+                translated.append(f"海外{overseas_source}异常")
+            elif lowered.startswith("fx:") or "fx" in lowered:
+                translated.append(f"汇率{fx_source}异常")
+            elif "stale" in lowered:
+                translated.append("报价过期")
+            elif "skew" in lowered or "timestamps" in lowered:
+                translated.append("时间差过大")
+        return translated
+
+    @staticmethod
+    def issue_source_name(snapshot: SpreadSnapshot, leg_type: str, fallback: str | None) -> str | None:
+        prefix = f"{leg_type}:"
+        for error in snapshot.errors:
+            if not error.startswith(prefix):
+                continue
+            parts = error.split(":", 2)
+            if len(parts) >= 2 and parts[1].strip():
+                return parts[1].strip()
+        return fallback
+
+    @staticmethod
+    def is_age_stale(age_sec: float | None, threshold_sec: float) -> bool:
+        return age_sec is not None and age_sec > threshold_sec
+
+    @staticmethod
+    def format_age(age_sec: float | None) -> str:
+        if age_sec is None:
+            return "--"
+        if age_sec < 60:
+            return f"{age_sec:.0f}s"
+        if age_sec < 3600:
+            return f"{age_sec / 60:.1f}min"
+        return f"{age_sec / 3600:.1f}h"
 
     def evaluate_spread_pct_alerts(
         self,

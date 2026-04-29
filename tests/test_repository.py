@@ -65,7 +65,7 @@ class RepositoryTests(unittest.TestCase):
         original_connect = SQLiteRepositoryBase._connect
         attempts = {"count": 0}
 
-        def flaky_connect(repository: SQLiteRepositoryBase) -> sqlite3.Connection:
+        def flaky_connect(repository: SQLiteRepositoryBase):
             attempts["count"] += 1
             if attempts["count"] == 1:
                 raise sqlite3.OperationalError("database is locked")
@@ -79,6 +79,47 @@ class RepositoryTests(unittest.TestCase):
             self.assertGreaterEqual(attempts["count"], 2)
             rows = repository.fetch_snapshots(limit=1)
             self.assertEqual(rows, [])
+
+    def test_connect_context_closes_sqlite_connection(self) -> None:
+        class FakeConnection:
+            def __init__(self) -> None:
+                self.row_factory = None
+                self.committed = False
+                self.rolled_back = False
+                self.closed = False
+
+            def execute(self, *args, **kwargs):
+                return self
+
+            def commit(self) -> None:
+                self.committed = True
+
+            def rollback(self) -> None:
+                self.rolled_back = True
+
+            def close(self) -> None:
+                self.closed = True
+
+        repository = object.__new__(SQLiteRepositoryBase)
+        repository.db_path = Path("ignored.db")
+        successful_connection = FakeConnection()
+        with mock.patch("cross_market_monitor.infrastructure.storage.sqlite_base.sqlite3.connect", return_value=successful_connection):
+            with repository._connect() as connection:
+                self.assertIs(connection, successful_connection)
+
+        self.assertTrue(successful_connection.committed)
+        self.assertFalse(successful_connection.rolled_back)
+        self.assertTrue(successful_connection.closed)
+
+        failed_connection = FakeConnection()
+        with mock.patch("cross_market_monitor.infrastructure.storage.sqlite_base.sqlite3.connect", return_value=failed_connection):
+            with self.assertRaises(RuntimeError):
+                with repository._connect():
+                    raise RuntimeError("boom")
+
+        self.assertFalse(failed_connection.committed)
+        self.assertTrue(failed_connection.rolled_back)
+        self.assertTrue(failed_connection.closed)
 
     def test_persists_and_reads_normalized_domestic_history(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

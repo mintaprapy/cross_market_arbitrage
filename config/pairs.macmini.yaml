@@ -5,11 +5,13 @@ pair_overrides:
         symbol: XAUUSDT
         label: Binance XAUUSDT Perpetual
   AG_XAG_GROSS:
+    hedge_contract_size: 544.95
     overseas_candidates:
       - source: binance_futures
         symbol: XAGUSDT
         label: Binance XAGUSDT Perpetual
   AG_XAG_NET:
+    hedge_contract_size: 544.95
     overseas_candidates:
       - source: binance_futures
         symbol: XAGUSDT
